@@ -8,7 +8,7 @@ function Get-SelectionFromListWithDefault($prompt, [string[]]$list, $default) {
     for ($i = 0; $i -lt $list.Count; $i++) {
         Write-Host "[$i] $($list[$i])"
     }
-    $finalPrompt = "$prompt (Leave blank for default $default):"
+    $finalPrompt = "$prompt (Leave blank for default $default)"
     while ($true) {
         $selection = Read-Host $finalPrompt
         if ([string]::IsNullOrWhiteSpace($selection)) {
@@ -16,8 +16,7 @@ function Get-SelectionFromListWithDefault($prompt, [string[]]$list, $default) {
         }
         if ($selection -match "^\d+$" -and [int]$selection -ge 0 -and [int]$selection -lt $list.Count) {
             return $list[[int]$selection]
-        }
-        else {
+        } else {
             Write-Host "Invalid selection. Please enter a number between 0 and $($list.Count - 1), or leave blank for default."
         }
     }
@@ -44,8 +43,19 @@ function Get-Selection($prompt, [string[]]$allowed) {
     }
 }
 
+# Function for selecting between single or multiple scripts.
+function Get-SingleMultiple($prompt) {
+    while ($true) {
+        $input = Read-Host $prompt
+        $lc = $input.ToLower().Trim(":"[0], " "[0])
+        if ($lc -eq "single" -or $lc -eq "s") { return "single" }
+        elseif ($lc -eq "multiple" -or $lc -eq "m") { return "multiple" }
+        else { Write-Host "Invalid selection. Please enter Single(S) or Multiple(M)." }
+    }
+}
+
 function Get-VideoTitle {
-    $inputVideoTitle = Read-Host "Enter VideoTitle name ([DKB Team] default):"
+    $inputVideoTitle = Read-Host "Enter VideoTitle name ([DKB Team] default) "
     if ([string]::IsNullOrWhiteSpace($inputVideoTitle)) { return "[DKB Team]" }
     else { return $inputVideoTitle.Trim() }
 }
@@ -62,7 +72,7 @@ function Write-DebugInfo {
         Write-Host $rawResults
         Write-Host "DEBUG: Parsed series:" -ForegroundColor Cyan
         foreach ($s in $seriesArray) {
-            Write-Host "Title: $($s.Title), Season: $($s.Season), SeriesID: $($s.SeriesID)"
+            Write-Host "Title: $($s.Title), Season: $($s.Season), Type: $($s.Type), SeriesID: $($s.SeriesID), ZID: $($s.ZID)"
         }
     }
 }
@@ -70,7 +80,7 @@ function Write-DebugInfo {
 # --- End Helper Functions ---
 
 # --- Service & Master Path Setup ---
-$chosenService = Get-SelectionFromListWithDefault "Choose a service:" $services "Crunchyroll"
+$chosenService = Get-SelectionFromListWithDefault "Choose a service" $services "Crunchyroll"
 if ($chosenService -eq "Hidive") {
     $masterPath = "REPLACE_WITH_YOUR_HIDIVE_PATH".Trim()
     $authScriptCurrent = "$masterPath\Auth_HDV.bat"
@@ -80,16 +90,14 @@ if ($chosenService -eq "Hidive") {
     $masterPath = "REPLACE_WITH_YOUR_CR_PATH".Trim()
     $authScriptCurrent = "$masterPath\Auth_CR.bat"
     $serviceOption = "crunchy"
-    $extraParam = '--crapi "web"'
+    $extraParam = @("--crapi", "web")
 }
 $aniDLPath = "$masterPath\aniDL.exe"
 $scriptOutputPath = "$masterPath\Generated_Scripts"
 if (!(Test-Path $scriptOutputPath)) { New-Item -ItemType Directory -Path $scriptOutputPath | Out-Null }
-# For Crunchyroll, we use these lines:
 $pushdLine = 'pushd "' + $masterPath + '"'
 $moveLine  = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
 
-# Helper function to normalize numbers.
 function Normalize-Number($num) {
     return ([string]::Format("{0:D2}", [int]$num))
 }
@@ -98,11 +106,14 @@ function Normalize-Number($num) {
 function Parse-Series {
     param($searchResults)
     $foundSeries = @()
+    # Allowed languages list.
+    $allowedLangs = @("en-US", "en-IN", "es-419", "es-ES", "fr-FR", "pt-BR", "pt-PT", "ar-ME", "ar-SA", "it-IT", "de-DE", "ru-RU", "tr-TR", "hi-IN", "ca-ES", "pl-PL", "th-TH", "ta-IN", "ms-MY", "vi-VN", "id-ID", "te-IN", "zh-CN", "zh-HK", "zh-TW", "ko-KR", "ja-JP")
+    
     foreach ($line in $searchResults -split "`r?`n") {
         $trimmedLine = $line.Trim()
-        # Skip common header lines.
         if ($trimmedLine -match "^(Found movie lists:|Found episodes:|Newly added:)") { continue }
         if ($trimmedLine -match "^(Top results:|Found series:|Total results:)") { continue }
+        
         # HIDIVE series pattern.
         if ($serviceOption -eq "hidive" -and $trimmedLine -match "^\[Z\.([0-9]+)\]\s+(.+?)\s+\((\d+)\s+Seasons\)") {
             $seriesID = $matches[1].Trim()
@@ -110,68 +121,71 @@ function Parse-Series {
             $seasonCount = $matches[3].Trim()
             $seriesObj = [PSCustomObject]@{
                 Title        = $title
-                Season       = "1"       # Default to season 1.
+                Season       = "1"
                 SeasonCount  = $seasonCount
                 Type         = "HIDIVE"
                 EpisodeCount = $null
                 SeriesID     = $seriesID
+                ZID          = $null
                 Versions     = $null
                 Subtitles    = $null
             }
             $foundSeries += $seriesObj
             continue
         }
-        # Crunchyroll series pattern – works for both --search and --new outputs.
-        if ($serviceOption -eq "crunchy" -and $trimmedLine -match "^\[Z:[^\]\|]+(?:\|SRZ\.[^\]]+)?\]\s+(.+?)\s+\(Seasons:\s*(\d+)(?:,\s*EPs:\s*(\d+))?\)\s+\[(.*?)\]") {
-            $title = $matches[1].Trim()
-            $season = $matches[2].Trim()
-            $epCount = $matches[3]
-            $type = $matches[4].Trim()
-            $seriesObj = [PSCustomObject]@{
-                Title        = $title
-                Season       = $season
-                Type         = $type
-                EpisodeCount = $epCount
-                SeriesID     = $null
-                Versions     = $null
-                Subtitles    = $null
-            }
-            $foundSeries += $seriesObj
-            continue
-        }
-        elseif ($trimmedLine -match "^\[S:([^\]]+)\]\s+(.+?)\s+\(Season:? (\d+)\)\s+\[(.*?)\]") {
-            $seriesID = $matches[1].Trim()
-            $title = $matches[2].Trim()
-            $season = $matches[3].Trim()
-            $type = $matches[4].Trim()
-            $existing = $foundSeries | Where-Object { $_.Title -eq $title -and $_.Season -eq $season }
-            if ($existing) {
-                foreach ($obj in $existing) { $obj.SeriesID = $seriesID }
-            }
-            else {
-                $seriesObj = [PSCustomObject]@{
-                    Title        = $title
-                    Season       = $season
-                    Type         = $type
-                    EpisodeCount = $null
-                    SeriesID     = $seriesID
+        # Crunchyroll pattern using Z: prefix.
+        if ($serviceOption -eq "crunchy" -and $trimmedLine -match "^\[Z:([^\|\]]+)(?:\|SRZ\.[^\]]+)?\]\s+(.+?)\s+\(Seasons:\s*(\d+)(?:,\s*EPs:\s*(\d+))?\)\s+\[(.*?)\]") {
+            $zMatches = [regex]::Matches($trimmedLine, "^\[Z:([^\|\]]+)(?:\|SRZ\.[^\]]+)?\]\s+(.+?)\s+\(Seasons:\s*(\d+)(?:,\s*EPs:\s*(\d+))?\)\s+\[(.*?)\]")
+            foreach ($m in $zMatches) {
+                $obj = [PSCustomObject]@{
+                    Title        = $m.Groups[2].Value.Trim()
+                    Season       = $m.Groups[3].Value.Trim()
+                    Type         = $m.Groups[5].Value.Trim()
+                    EpisodeCount = if ($m.Groups[4].Success) { $m.Groups[4].Value.Trim() } else { $null }
+                    SeriesID     = $null
+                    ZID          = $m.Groups[1].Value.Trim()
                     Versions     = $null
                     Subtitles    = $null
                 }
-                $foundSeries += $seriesObj
+                if (-not ($foundSeries | Where-Object { $_.Title -eq $obj.Title -and $_.Season -eq $obj.Season -and $_.ZID -eq $obj.ZID })) {
+                    $foundSeries += $obj
+                }
             }
         }
-        elseif ($trimmedLine -match "^- Versions:\s*(.+)") {
-            $versions = $matches[1].Trim()
-            if ($foundSeries.Count -gt 0) { $foundSeries[-1].Versions = $versions }
+        # Crunchyroll pattern using S: prefix.
+        elseif ($trimmedLine -match "^\[S:([^\]]+)\]\s+(.+?)\s+\(Season:? (\d+)\)\s+\[(.*?)\]") {
+            $sMatches = [regex]::Matches($trimmedLine, "^\[S:([^\]]+)\]\s+(.+?)\s+\(Season:? (\d+)\)\s+\[(.*?)\]")
+            foreach ($m in $sMatches) {
+                $obj = [PSCustomObject]@{
+                    Title        = $m.Groups[2].Value.Trim()
+                    Season       = $m.Groups[3].Value.Trim()
+                    Type         = $m.Groups[4].Value.Trim()
+                    EpisodeCount = $null
+                    SeriesID     = $m.Groups[1].Value.Trim()
+                    ZID          = $null
+                    Versions     = $null
+                    Subtitles    = $null
+                }
+                if (-not ($foundSeries | Where-Object { $_.Title -eq $obj.Title -and $_.Season -eq $obj.Season -and $_.SeriesID -eq $obj.SeriesID })) {
+                    $foundSeries += $obj
+                }
+            }
         }
+        # Process Versions with allowed language filtering.
+        elseif ($trimmedLine -match "^- Versions:\s*(.+)") {
+            $rawVersions = $matches[1].Trim()
+            $parsedVersions = $rawVersions -split "," | ForEach-Object { $_.Trim() } | Where-Object { $allowedLangs -contains $_ }
+            if ($foundSeries.Count -gt 0) { $foundSeries[-1].Versions = $parsedVersions }
+        }
+        # Process Subtitles with allowed language filtering.
         elseif ($trimmedLine -match "^- Subtitles:\s*(.+)") {
-            $subs = $matches[1].Trim()
+            $rawSubs = $matches[1].Trim()
+            $parsedSubs = $rawSubs -split "," | ForEach-Object { $_.Trim() } | Where-Object { $allowedLangs -contains $_ }
             if ($foundSeries.Count -gt 0) {
                 if (-not $foundSeries[-1].PSObject.Properties["Subtitles"]) {
-                    $foundSeries[-1] | Add-Member -MemberType NoteProperty -Name Subtitles -Value $subs
+                    $foundSeries[-1] | Add-Member -MemberType NoteProperty -Name Subtitles -Value $parsedSubs
                 }
-                else { $foundSeries[-1].Subtitles = $subs }
+                else { $foundSeries[-1].Subtitles = $parsedSubs }
             }
         }
     }
@@ -187,7 +201,6 @@ while ($true) {
     Write-Host "Enter Anime Name or type New to check the latest series:" -NoNewline
     $animeName = Read-Host
 
-    # For Crunchyroll, if the input equals "New" (case-insensitive), use the --new flag.
     if ($serviceOption -eq "crunchy" -and $animeName -ieq "new") {
         $searchResults = & $aniDLPath --service $serviceOption $extraParam --new
     }
@@ -195,7 +208,6 @@ while ($true) {
         $searchResults = & $aniDLPath --service $serviceOption $extraParam --search "$animeName"
     }
     else {
-        # For HIDIVE, always use --search.
         $searchResults = & $aniDLPath --service $serviceOption --search "$animeName"
     }
     
@@ -219,9 +231,10 @@ while ($true) {
         $displayLine = "[$i] $($foundSeries[$i].Title) - Season $($foundSeries[$i].Season) ($($foundSeries[$i].Type))"
         if ($foundSeries[$i].EpisodeCount) { $displayLine += " - EPs: $($foundSeries[$i].EpisodeCount)" }
         if ($foundSeries[$i].SeriesID) { $displayLine += " [S:$($foundSeries[$i].SeriesID)]" }
+        if ($foundSeries[$i].ZID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" }
         Write-Host $displayLine
-        if ($foundSeries[$i].Versions) { Write-Host "    - Versions: $($foundSeries[$i].Versions)" }
-        if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles)" }
+        if ($foundSeries[$i].Versions) { Write-Host "    - Versions: $($foundSeries[$i].Versions -join ', ')" }
+        if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
     }
     
     while ($true) {
@@ -237,13 +250,22 @@ while ($true) {
     }
     
     foreach ($series in $selectedSeries) {
-        $seriesID = $series.SeriesID
+        if ($serviceOption -eq "crunchy" -and -not [string]::IsNullOrWhiteSpace($series.ZID)) {
+            $flag = "--srz"
+            $idForCmd = $series.ZID
+        } else {
+            $flag = "-s"
+            $idForCmd = $series.SeriesID
+        }
+        
+        $seriesID = $idForCmd
         $origShowTitle = ($series.Title -replace '[\\/:*?"<>|]', '') -replace '\s+', ' '
         if ($series.Season -match "^\d+$") {
             if ([int]$series.Season -lt 10) { $origSeason = "0" + [int]$series.Season }
             else { $origSeason = $series.Season }
+        } else { 
+            $origSeason = $series.Season 
         }
-        else { $origSeason = $series.Season }
         $origEpisode = "1"
         
         # --- Language Prompts ---
@@ -267,8 +289,9 @@ while ($true) {
             if ($series.Subtitles) {
                 $availableSubs = $series.Subtitles -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
                 $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script:" $availableSubs "en-US"
+            } else { 
+                $chosenSub = "en-US" 
             }
-            else { $chosenSub = "en-US" }
         }
         # --- End Language Prompts ---
         
@@ -280,146 +303,54 @@ while ($true) {
             else { Write-Host "Please choose from: all, specific, or all-but-one." }
         }
         
-        $allScriptType = ""
         if ($episodeSelection -eq "all") {
-            $allScriptType = Get-Selection "Do you want a single script or multiple scripts (one per episode)? (single/multiple)" @("single", "multiple")
+            $scriptType = "single"
+        } elseif ($episodeSelection -eq "specific") {
+            $scriptType = Get-SingleMultiple "Do you want a single script or multiple scripts? (Single(S)/Multiple(M))"
         }
         
-        $inputShowTitle = Read-Host "Enter new show title for filename (leave blank for default [$origShowTitle]):"
+        $inputShowTitle = Read-Host "Enter new show title for filename (leave blank for default [$origShowTitle])"
         if ($inputShowTitle -ne "") {
             $cleaned = $inputShowTitle -replace '[\\/:*?"<>|]', ""
             $cmdShowTitle = $cleaned.Trim()
             $batShowTitle = $cleaned.Trim() -replace ' ', '_'
-        }
-        else {
+        } else {
             $cmdShowTitle = $origShowTitle
             $batShowTitle = $origShowTitle -replace '\s+', '_'
         }
         
-        $inputSeason = Read-Host "Enter new season value (leave blank for default [$origSeason]):"
+        $inputSeason = Read-Host "Enter new season value (leave blank for default [$origSeason])"
         if ($inputSeason -ne "") {
-            if ($inputSeason -match "^\d+$") { $cmdSeason = Normalize-Number $inputSeason }
-            else { $cmdSeason = $inputSeason }
+            if ($inputSeason -match "^\d+$") { 
+                $cmdSeason = Normalize-Number $inputSeason 
+            } else { 
+                $cmdSeason = $inputSeason 
+            }
             $batSeason = $cmdSeason
-        }
-        else {
+        } else {
             $cmdSeason = Normalize-Number $origSeason
             $batSeason = $cmdSeason
         }
         
         if ($episodeSelection -eq "all") {
-            $cmdEpisode = $defaultEpisode
-            $batEpisode = "01"
-            if ($allScriptType -eq "single") {
-                if ($serviceOption -eq "hidive") {
-                    $episodeOption = "--all"
-                    $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -e 1 -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $fileNameArg
-                    $batchContent = @(
-                        "chcp 65001",
-                        "@echo off",
-                        "SET ORIGINAL=%CD%",
-                        "pushd ""$masterPath""",
-                        "call ""$authScriptCurrent""",
-                        "popd",
-                        $cmd,
-                        "pushd ""$masterPath\videos""",
-                        "call ""$masterPath\videos\rename_mkv_tracks.bat""",
-                        "move ""$masterPath\videos\*.mkv"" ""%ORIGINAL%""",
-                        "if not defined SKIP_PAUSE pause"
-                    )
-                }
-                else {
-                    $episodeOption = "--all"
-                    $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' -s ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $fileNameArg
-                    $batchContent = @(
-                        "@echo off",
-                        "chcp 65001 >nul",
-                        $pushdLine,
-                        "call ""$authScriptCurrent""",
-                        "popd",
-                        $cmd,
-                        $moveLine,
-                        "if not defined SKIP_PAUSE pause"
-                    )
-                }
-                $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + ".bat"
-                [System.IO.File]::WriteAllLines($batFile, $batchContent, (New-Object System.Text.UTF8Encoding($false)))
-                Write-Host "Created script: " + $batFile
-            }
-            else {
-                if ($series.EpisodeCount -match "^\d+$") {
-                    $epTotal = [int]$series.EpisodeCount
-                    $episodes = 1..$epTotal | ForEach-Object { $_.ToString() }
-                }
-                else {
-                    while ($true) {
-                        $episodeInput = Read-Host "Episode count not available. Enter episode numbers or range for the script(s) -e (e.g., 1-3, 1,2,3):"
-                        $regex = [regex] "^\s*(\d+)\s*-\s*(\d+)\s*$"
-                        $match = $regex.Match($episodeInput)
-                        if ($match.Success) {
-                            $startEp = [int]$match.Groups[1].Value
-                            $endEp = [int]$match.Groups[2].Value
-                            $episodes = $startEp..$endEp | ForEach-Object { $_.ToString() }
-                            break
-                        }
-                        elseif ($episodeInput -match "^\s*\d+(\s*,\s*\d+)+\s*$") {
-                            $episodes = $episodeInput -split "," | ForEach-Object { $_.Trim() }
-                            break
-                        }
-                        else {
-                            Write-Host "Invalid input. Please enter a valid range or comma-separated list."
-                        }
-                    }
-                }
-                if (Get-YesNo "Use modified start count for generated script names? (yes/no)") {
-                    $counter = [int]$batEpisode
-                }
-                else {
-                    $counter = 1
-                }
-                foreach ($ep in $episodes) {
-                    $epPadded = ([string]::Format("{0:D2}", $counter))
-                    $dynamicFileNameArg = '--fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E' + $epPadded + ' [${height}p]"'
-                    $batFileName = $batShowTitle + "_Season_" + $batSeason + "_E" + $epPadded + ".bat"
-                    $episodeOption = "-e " + $ep
-                    if ($serviceOption -eq "hidive") {
-                        $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                        $batchContent = @(
-                            "chcp 65001",
-                            "@echo off",
-                            "SET ORIGINAL=%CD%",
-                            "pushd ""$masterPath""",
-                            "call ""$authScriptCurrent""",
-                            "popd",
-                            $cmd,
-                            "pushd ""$masterPath\videos""",
-                            "call ""$masterPath\videos\rename_mkv_tracks.bat""",
-                            "move ""$masterPath\videos\*.mkv"" ""%ORIGINAL%""",
-                            "if not defined SKIP_PAUSE pause"
-                        )
-                    }
-                    else {
-                        $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' -s ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                        $batchContent = @(
-                            "@echo off",
-                            "chcp 65001 >nul",
-                            $pushdLine,
-                            "call ""$authScriptCurrent""",
-                            "popd",
-                            $cmd,
-                            $moveLine,
-                            "if not defined SKIP_PAUSE pause"
-                        )
-                    }
-                    $batFile = $scriptOutputPath + "\" + $batFileName
-                    [System.IO.File]::WriteAllLines($batFile, $batchContent, (New-Object System.Text.UTF8Encoding($false)))
-                    Write-Host "Created script: " + $batFile
-                    $counter++
-                }
-            }
+            # For 'all' episodes, use -e 1 and a filename with literal ${episode} placeholder.
+            $episodeOption = "--all"
+            $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -e 1 -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+            $batchContent = @(
+                "@echo off",
+                "chcp 65001 >nul",
+                $pushdLine,
+                "call ""$authScriptCurrent""",
+                "popd",
+                $cmd,
+                $moveLine,
+                "if not defined SKIP_PAUSE pause"
+            )
+            $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + ".bat"
+            [System.IO.File]::WriteAllLines($batFile, $batchContent, (New-Object System.Text.UTF8Encoding($false)))
+            Write-Host "Created script: " + $batFile
         }
         elseif ($episodeSelection -eq "specific") {
-            $scriptType = Get-Selection "Do you want a single script or multiple scripts? (single/multiple)" @("single", "multiple")
             if ($scriptType -eq "single") {
                 while ($true) {
                     $episodeInput = Read-Host "Enter episode numbers or range for the script(s) -e (e.g., 1-3, 1,2,3)"
@@ -428,7 +359,7 @@ while ($true) {
                 }
                 $episodeOption = "-e " + $episodeInput
                 if ($serviceOption -eq "hidive") {
-                    $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $fileNameArg
+                    $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
                     $batchContent = @(
                         "chcp 65001",
                         "@echo off",
@@ -444,7 +375,7 @@ while ($true) {
                     )
                 }
                 else {
-                    $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' -s ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $fileNameArg
+                    $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
                     $batchContent = @(
                         "@echo off",
                         "chcp 65001 >nul",
@@ -461,6 +392,7 @@ while ($true) {
                 Write-Host "Created script: " + $batFile
             }
             elseif ($scriptType -eq "multiple") {
+                # Get the episode numbers.
                 $validInput = $false
                 while (-not $validInput) {
                     $episodeInput = Read-Host "Enter episode numbers or range for the script(s) -e (e.g., 1-3, 1,2,3)"
@@ -468,21 +400,49 @@ while ($true) {
                     $match = $regex.Match($episodeInput)
                     if ($match.Success) {
                         $validInput = $true
-                        $startEp = [int]$match.Groups[1].Value
-                        $endEp = [int]$match.Groups[2].Value
-                        $episodes = $startEp..$endEp | ForEach-Object { $_.ToString() }
+                        $rangeStart = [int]$match.Groups[1].Value
+                        $rangeEnd = [int]$match.Groups[2].Value
+                        $episodesArray = $rangeStart..$rangeEnd
+                        $isRange = $true
                     }
-                    elseif ($episodeInput -match "^\s*\d+(\s*,\s*\d+)+\s*$") {
+                    elseif ($episodeInput -match "^\s*\d+(\s*,\s*\d+)*\s*$") {
                         $validInput = $true
-                        $episodes = $episodeInput -split "," | ForEach-Object { $_.Trim() }
+                        $episodesArray = $episodeInput -split "," | ForEach-Object { [int]$_.Trim() }
+                        $isRange = $false
                     }
-                    else { Write-Host "Invalid input. Please enter a valid range or comma-separated list." }
+                    else { 
+                        Write-Host "Invalid input. Please enter a valid range or comma-separated list." 
+                    }
                 }
-                if (($batEpisode) -ne $null) { $counter = [int]$batEpisode } else { $counter = 1 }
-                foreach ($ep in $episodes) {
-                    $epPadded = ([string]::Format("{0:D2}", $counter))
-                    $dynamicFileNameArg = '--fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E' + $epPadded + ' [${height}p]"'
-                    $batFileName = $batShowTitle + "_Season_" + $batSeason + "_E" + $epPadded + ".bat"
+                # If the input is a range, ask for filename modification.
+                if ($isRange) {
+                    if (Get-YesNo 'Do you want to modify the Filename number of the generated Scripts?(Y/N)') {
+                        $newCounter = Read-Host "Input the new episode start for the scripts (eg: 01, 13, 25)"
+                        if ($newCounter -match "^\d+$") {
+                            $counter = [int]$newCounter
+                            $useModified = $true
+                        } else {
+                            Write-Host "Invalid number, defaulting to 1."
+                            $counter = 1
+                            $useModified = $true
+                        }
+                    } else {
+                        $useModified = $false
+                    }
+                } else {
+                    $useModified = $false
+                }
+                foreach ($ep in $episodesArray) {
+                    if ($useModified) {
+                        $epPadded = ([string]::Format("{0:D2}", $counter))
+                        $currentEpTag = $epPadded
+                        $counter++
+                    } else {
+                        $epPadded = ([string]::Format("{0:D2}", $ep))
+                        $currentEpTag = $epPadded
+                    }
+                    $dynamicFileNameArg = '--fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E' + $currentEpTag + ' [${height}p]"'
+                    $batFileName = $batShowTitle + "_Season_" + $batSeason + "_E" + $currentEpTag + ".bat"
                     $episodeOption = "-e " + $ep
                     if ($serviceOption -eq "hidive") {
                         $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
@@ -499,9 +459,8 @@ while ($true) {
                             "move ""$masterPath\videos\*.mkv"" ""%ORIGINAL%""",
                             "if not defined SKIP_PAUSE pause"
                         )
-                    }
-                    else {
-                        $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' -s ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                    } else {
+                        $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                         $batchContent = @(
                             "@echo off",
                             "chcp 65001 >nul",
@@ -516,7 +475,6 @@ while ($true) {
                     $batFile = $scriptOutputPath + "\" + $batFileName
                     [System.IO.File]::WriteAllLines($batFile, $batchContent, (New-Object System.Text.UTF8Encoding($false)))
                     Write-Host "Created script: " + $batFile
-                    $counter++
                 }
             }
         }
@@ -528,7 +486,7 @@ while ($true) {
             }
             $skipForFilename = ($skipInput -replace "\s", "") -replace ",", "_"
             if ($serviceOption -eq "hidive") {
-                $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $fileNameArg
+                $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '"'
                 $batchContent = @(
                     "chcp 65001",
                     "@echo off",
@@ -542,9 +500,8 @@ while ($true) {
                     "move ""$masterPath\videos\*.mkv"" ""%ORIGINAL%""",
                     "if not defined SKIP_PAUSE pause"
                 )
-            }
-            else {
-                $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' -s ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $fileNameArg
+            } else {
+                $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '"'
                 $batchContent = @(
                     "@echo off",
                     "chcp 65001 >nul",
