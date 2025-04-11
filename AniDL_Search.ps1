@@ -82,12 +82,12 @@ function Write-DebugInfo {
 # --- Service & Master Path Setup ---
 $chosenService = Get-SelectionFromListWithDefault "Choose a service" $services "Crunchyroll"
 if ($chosenService -eq "Hidive") {
-    $masterPath = "C:\Users\Admin\Documents\HIDIVE_Master".Trim()
+    $masterPath = "REPLACE_WITH_YOUR_HIDIVE_PATH".Trim()
     $authScriptCurrent = "$masterPath\Auth_HDV.bat"
     $serviceOption = "hidive"
     $extraParam = ""
 } else {
-    $masterPath = "C:\Users\Admin\Documents\Multi_DL_Master".Trim()
+    $masterPath = "REPLACE_WITH_YOUR_CR_PATH".Trim()
     $authScriptCurrent = "$masterPath\Auth_CR.bat"
     $serviceOption = "crunchy"
     $extraParam = @("--crapi", "web")
