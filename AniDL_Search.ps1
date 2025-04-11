@@ -82,12 +82,12 @@ function Write-DebugInfo {
 # --- Service & Master Path Setup ---
 $chosenService = Get-SelectionFromListWithDefault "Choose a service" $services "Crunchyroll"
 if ($chosenService -eq "Hidive") {
-    $masterPath = "REPLACE_WITH_YOUR_HIDIVE_PATH".Trim()
+    $masterPath = "C:\Users\Admin\Documents\HIDIVE_Master".Trim()
     $authScriptCurrent = "$masterPath\Auth_HDV.bat"
     $serviceOption = "hidive"
     $extraParam = ""
 } else {
-    $masterPath = "REPLACE_WITH_YOUR_CR_PATH".Trim()
+    $masterPath = "C:\Users\Admin\Documents\Multi_DL_Master".Trim()
     $authScriptCurrent = "$masterPath\Auth_CR.bat"
     $serviceOption = "crunchy"
     $extraParam = @("--crapi", "web")
@@ -333,9 +333,9 @@ while ($true) {
         }
         
         if ($episodeSelection -eq "all") {
-            # For 'all' episodes, use -e 1 and a filename with literal ${episode} placeholder.
+            # For 'all' episodes, pass only --all to the generated script.
             $episodeOption = "--all"
-            $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -e 1 -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+            $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
             $batchContent = @(
                 "@echo off",
                 "chcp 65001 >nul",
