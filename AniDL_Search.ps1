@@ -3,6 +3,27 @@ Write-Host "Welcome to DKB Search and Script Generator"
 # Define available services.
 $services = @("Crunchyroll", "Hidive")
 
+# Debug function.
+$debugMode = $false
+function Write-DebugInfo {
+    param(
+        [string]$rawResults,
+        [array]$seriesArray
+    )
+    if ($debugMode) {
+        Write-Host "DEBUG: Raw search results:" -ForegroundColor Cyan
+        Write-Host $rawResults
+        Write-Host "DEBUG: Parsed series:" -ForegroundColor Cyan
+        foreach ($s in $seriesArray) {
+            Write-Host "Title: $($s.Title), Season: $($s.Season), Type: $($s.Type), SeriesID: $($s.SeriesID), ZID: $($s.ZID)"
+        }
+    }
+}
+
+function Normalize-Number($num) {
+    return ([string]::Format("{0:D2}", [int]$num))
+}
+
 # --- Helper Functions ---
 function Get-SelectionFromListWithDefault($prompt, [string[]]$list, $default) {
     for ($i = 0; $i -lt $list.Count; $i++) {
@@ -39,11 +60,10 @@ function Get-Selection($prompt, [string[]]$allowed) {
     while ($true) {
         $input = Read-Host $prompt
         if ($allowed -contains $input) { return $input }
-        else { Write-Host "Invalid selection. Allowed values: $($allowed -join ', ')." }
+        else { Write-Host "Invalid selection. Allowed values: $($allowed -join ', ')" }
     }
 }
 
-# Function for selecting between single or multiple scripts.
 function Get-SingleMultiple($prompt) {
     while ($true) {
         $input = Read-Host $prompt
@@ -55,51 +75,23 @@ function Get-SingleMultiple($prompt) {
 }
 
 function Get-VideoTitle {
-    $inputVideoTitle = Read-Host "Enter VideoTitle name ([DKB Team] default) "
+    $inputVideoTitle = Read-Host "Enter VideoTitle name ([DKB Team] default)"
     if ([string]::IsNullOrWhiteSpace($inputVideoTitle)) { return "[DKB Team]" }
     else { return $inputVideoTitle.Trim() }
 }
 
-# Debug function.
-$debugMode = $false
-function Write-DebugInfo {
-    param(
-        [string]$rawResults,
-        [array]$seriesArray
-    )
-    if ($debugMode) {
-        Write-Host "DEBUG: Raw search results:" -ForegroundColor Cyan
-        Write-Host $rawResults
-        Write-Host "DEBUG: Parsed series:" -ForegroundColor Cyan
-        foreach ($s in $seriesArray) {
-            Write-Host "Title: $($s.Title), Season: $($s.Season), Type: $($s.Type), SeriesID: $($s.SeriesID), ZID: $($s.ZID)"
+# --- Helper: Experimental Feature Prompt ---
+function Get-ExperimentalFeatureConsent {
+    while ($true) {
+        $input = Read-Host 'Wanna use experimental feature? Y/N'
+        switch ($input.ToLower()) {
+            'y' { return $true }
+            'yes' { return $true }
+            'n' { return $false }
+            'no' { return $false }
+            default { Write-Host "Please enter Y/N or Yes/No." }
         }
     }
-}
-
-# --- End Helper Functions ---
-
-# --- Service & Master Path Setup ---
-$chosenService = Get-SelectionFromListWithDefault "Choose a service" $services "Crunchyroll"
-if ($chosenService -eq "Hidive") {
-    $masterPath = "REPLACE_WITH_YOUR_HIDIVE_PATH".Trim()
-    $authScriptCurrent = "$masterPath\Auth_HDV.bat"
-    $serviceOption = "hidive"
-    $extraParam = ""
-} else {
-    $masterPath = "REPLACE_WITH_YOUR_CR_PATH".Trim()
-    $authScriptCurrent = "$masterPath\Auth_CR.bat"
-    $serviceOption = "crunchy"
-    $extraParam = @("--crapi", "web")
-}
-$aniDLPath = "$masterPath\aniDL.exe"
-$scriptOutputPath = "$masterPath\Generated_Scripts"
-if (!(Test-Path $scriptOutputPath)) { New-Item -ItemType Directory -Path $scriptOutputPath | Out-Null }
-$pushdLine = 'pushd "' + $masterPath + '"'
-$moveLine  = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
-
-function Normalize-Number($num) {
-    return ([string]::Format("{0:D2}", [int]$num))
 }
 
 # --- Parse-Series Function ---
@@ -108,12 +100,10 @@ function Parse-Series {
     $foundSeries = @()
     # Allowed languages list.
     $allowedLangs = @("en-US", "en-IN", "es-419", "es-ES", "fr-FR", "pt-BR", "pt-PT", "ar-ME", "ar-SA", "it-IT", "de-DE", "ru-RU", "tr-TR", "hi-IN", "ca-ES", "pl-PL", "th-TH", "ta-IN", "ms-MY", "vi-VN", "id-ID", "te-IN", "zh-CN", "zh-HK", "zh-TW", "ko-KR", "ja-JP")
-    
     foreach ($line in $searchResults -split "`r?`n") {
         $trimmedLine = $line.Trim()
         if ($trimmedLine -match "^(Found movie lists:|Found episodes:|Newly added:)") { continue }
         if ($trimmedLine -match "^(Top results:|Found series:|Total results:)") { continue }
-        
         # HIDIVE series pattern.
         if ($serviceOption -eq "hidive" -and $trimmedLine -match "^\[Z\.([0-9]+)\]\s+(.+?)\s+\((\d+)\s+Seasons\)") {
             $seriesID = $matches[1].Trim()
@@ -192,9 +182,400 @@ function Parse-Series {
     return $foundSeries
 }
 
-$defaultShowTitle = '${showTitle}'
-$defaultSeason = '${season}'
-$defaultEpisode = '${episode}'
+# --- Experimental Crunchyroll Script Generator ---
+function Generate-ExperimentalCrunchyrollScript {
+    param(
+        [string]$aniDLPath,
+        [string]$masterPath,
+        [string]$authScriptCurrent,
+        [string]$scriptOutputPath
+    )
+    while ($true) {
+        # Ask for anime name
+        $animeName = Read-Host "Enter Anime Name or type New to check the latest series (Experimental):"
+        $serviceOption = "crunchy"
+        $extraParam = @('--crapi','web')
+        if ($animeName -ieq "new") {
+            $searchResults = & $aniDLPath --service $serviceOption @extraParam --new
+        } else {
+            $searchResults = & $aniDLPath --service $serviceOption @extraParam --search "$animeName"
+        }
+        if (-not $searchResults) {
+            Write-Host "No results found. Try again."
+            continue
+        }
+        $foundSeries = Parse-Series $searchResults
+        $foundSeries = @($foundSeries)
+        Write-DebugInfo -rawResults $searchResults -seriesArray $foundSeries
+        if (-not $foundSeries) {
+            Write-Host "No anime found. Exiting experimental."
+            return
+        }
+        Write-Host "---- Available Series (Experimental) ----"
+        for ($i = 0; $i -lt $foundSeries.Count; $i++) {
+            $displayLine = "[$i] $($foundSeries[$i].Title) - Season $($foundSeries[$i].Season) ($($foundSeries[$i].Type))"
+            if ($foundSeries[$i].EpisodeCount) { $displayLine += " - EPs: $($foundSeries[$i].EpisodeCount)" }
+            if ($foundSeries[$i].SeriesID) { $displayLine += " [S:$($foundSeries[$i].SeriesID)]" }
+            if ($foundSeries[$i].ZID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" }
+            Write-Host $displayLine
+            if ($foundSeries[$i].Versions) { Write-Host "    - Versions: $($foundSeries[$i].Versions -join ', ')" }
+            if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
+        }
+        while ($true) {
+            $seriesIndices = Read-Host "Enter the numbers of the series (comma-separated)"
+            $selectedSeries = $seriesIndices -split "," | ForEach-Object {
+                $index = $_.Trim()
+                if ($index -match "^\d+$" -and [int]$index -ge 0 -and [int]$index -lt $foundSeries.Count) {
+                    $foundSeries[[int]$index]
+                }
+            }
+            if ($selectedSeries) { break }
+            Write-Host "Invalid selection. Please enter valid numbers from the list."
+        }
+        foreach ($series in $selectedSeries) {
+            if ($serviceOption -eq "crunchy" -and -not [string]::IsNullOrWhiteSpace($series.ZID)) {
+                $flag = "--srz"
+                $seriesID = $series.ZID
+            } else {
+                $flag = "-s"
+                $seriesID = $series.SeriesID
+            }
+            # --- Language Prompts ---
+            if ($serviceOption -eq "hidive") {
+                $availableDubLangs = @("jpn", "en-US", "spa-419", "pt-BR")
+                $chosenDubLang = Get-SelectionFromListWithDefault "Choose a dub language to download:" $availableDubLangs "jpn"
+                $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" $availableDubLangs "jpn"
+                $availableSubs = @("en-US", "ja-JP", "spa-419", "pt-BR")
+                $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script:" $availableSubs "en-US"
+            }
+            else {
+                if ($series.Versions) {
+                    $availableDubLangs = $series.Versions -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+                    $chosenDubLang = Get-SelectionFromListWithDefault "Choose a dub language to download:" $availableDubLangs "ja-JP"
+                    $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" $availableDubLangs "ja-JP"
+                }
+                else {
+                    $chosenDubLang = "ja-JP"
+                    $chosenDefaultAudio = "ja-JP"
+                }
+                if ($series.Subtitles) {
+                    $availableSubs = $series.Subtitles -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+                    $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script:" $availableSubs "en-US"
+                } else { 
+                    $chosenSub = "en-US" 
+                }
+            }
+            # --- End Language Prompts ---
+            $chosenVideoTitle = Get-VideoTitle
+            while ($true) {
+                $episodeSelection = Read-Host "Do you want to download all episodes or specific episodes? (all/specific/all-but-one)"
+                if ($episodeSelection -match "^(all|specific|all-but-one)$") { break }
+                else { Write-Host "Please choose from: all, specific, or all-but-one." }
+            }
+            
+            if ($episodeSelection -eq "all") {
+                $scriptType = "single"
+            } elseif ($episodeSelection -eq "specific") {
+                $scriptType = Get-SingleMultiple "Do you want a single script or multiple scripts? (Single(S)/Multiple(M))"
+            }
+            
+            $inputShowTitle = Read-Host "Enter new show title for filename (leave blank for default [$($series.Title -replace '[\\/:*?"<>|]', '')])"
+            if ($inputShowTitle -ne "") {
+                $cleaned = $inputShowTitle -replace '[\\/:*?"<>|]', ""
+                $cmdShowTitle = $cleaned.Trim()
+                $batShowTitle = $cleaned.Trim() -replace ' ', '_'
+            } else {
+                $cmdShowTitle = $series.Title -replace '[\\/:*?"<>|]', ''
+                $batShowTitle = $series.Title -replace '[\\/:*?"<>|]', '' -replace '\s+', '_'
+            }
+            
+            $inputSeason = Read-Host "Enter new season value (leave blank for default [$($series.Season)])"
+            if ($inputSeason -ne "") {
+                if ($inputSeason -match "^\d+$") { 
+                    $cmdSeason = Normalize-Number $inputSeason 
+                } else { 
+                    $cmdSeason = $inputSeason 
+                }
+                $batSeason = $cmdSeason
+            } else {
+                $cmdSeason = Normalize-Number $series.Season
+                $batSeason = $cmdSeason
+            }
+            
+            if ($episodeSelection -eq "all") {
+                # For 'all' episodes, pass only --all to the generated script.
+                $episodeOption = "--all"
+                $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                $pushdMaster = 'pushd "' + $masterPath + '"'
+                $callAuth = 'call "' + $authScriptCurrent + '"'
+                $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+                $setBase = '    set "BASE=%%~nV"'
+                $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
+                $batchContent = @(
+                    "@echo off",
+                    "chcp 65001",
+                    $pushdMaster,
+                    $callAuth,
+                    $cmd,
+                    "popd",
+                    $moveVideos,
+                    "if not defined SKIP_PAUSE pause"
+                )
+                $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + ".bat"
+                [System.IO.File]::WriteAllLines($batFile, $batchContent, (New-Object System.Text.UTF8Encoding($false)))
+                Write-Host "Created script: " + $batFile
+            }
+            elseif ($episodeSelection -eq "specific") {
+                if ($scriptType -eq "single") {
+                    while ($true) {
+                        $episodeInput = Read-Host "Enter episode numbers or range for the script(s) -e (e.g., 1-3, 1,2,3)"
+                        if ($episodeInput -match "^\s*(\d+)\s*-\s*(\d+)\s*$" -or $episodeInput -match "^\s*\d+(\s*,\s*\d+)*\s*$") { break }
+                        else { Write-Host "Invalid input. Please enter a valid range or comma-separated list." }
+                    }
+                    $episodeOption = "-e " + $episodeInput
+                    if ($serviceOption -eq "hidive") {
+                        $cmd1 = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                        $cmd2 = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                        $pushdMaster = 'pushd "' + $masterPath + '"'
+                        $callAuth = 'call "' + $authScriptCurrent + '"'
+                        $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                        $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                        $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+                        $setBase = '    set "BASE=%%~nV"'
+                        $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
+                        $batchContent = @(
+                            "@echo off",
+                            "chcp 65001",
+                            "@echo off",
+                            "SET ORIGINAL=%CD%",
+                            $pushdMaster,
+                            $callAuth,
+                            $cmd1,
+                            $cmd2,
+                            $pushdVideos,
+                            "",
+                            $callRename,
+                            "popd",
+                            $moveVideos,
+                            "if not defined SKIP_PAUSE pause"
+                        )
+                    }
+                    else {
+                        $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                        $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs edge --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                        $pushdMaster = 'pushd "' + $masterPath + '"'
+                        $callAuth = 'call "' + $authScriptCurrent + '"'
+                        $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                        $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                        $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+                        $setBase = '    set "BASE=%%~nV"'
+                        $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
+                        $batchContent = @(
+                            "@echo off",
+                            "chcp 65001 >nul",
+                            $pushdMaster,
+                            $callAuth,
+                            $cmd1,
+                            $cmd2,
+                            "REM -MUX AUDIO INTO VIDEO-",
+                            "setlocal enabledelayedexpansion",
+                            $pushdVideos,
+                            "",
+                            "for %%V in (*.mkv) do (",
+                            $setBase,
+                            $setAudio,
+                            "",
+                            "    rem - mux: first the video+subs, then BEFORE the audio file we attach these options:",
+                            "    mkvmerge -o ""!BASE!_muxed.mkv"" ^",
+                            "      ""%%V"" ^",
+                            "      --language 0:ja-JP --track-name 0:""Japanese"" ^",
+                            "      ""!AUDIO!""",
+                            "",
+                            "    if exist ""!BASE!_muxed.mkv"" (",
+                            "        del ""%%V""",
+                            "        ren ""!BASE!_muxed.mkv"" ""%%~nxV""",
+                            "        del ""!AUDIO!""",
+                            "    ) else (",
+                            "        echo ERROR: mux failed for !BASE!",
+                            "    )",
+                            ")",
+                            "",
+                            "popd",
+                            "endlocal",
+                            "",
+                            "popd",
+                            $moveVideos,
+                            "if not defined SKIP_PAUSE pause"
+                        )
+                    }
+                    $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + ".bat"
+                    [System.IO.File]::WriteAllLines($batFile, $batchContent, (New-Object System.Text.UTF8Encoding($false)))
+                    Write-Host "Created script: " + $batFile
+                }
+                elseif ($scriptType -eq "multiple") {
+                    # Get the episode numbers.
+                    $validInput = $false
+                    while (-not $validInput) {
+                        $episodeInput = Read-Host "Enter episode numbers or range for the script(s) -e (e.g., 1-3, 1,2,3)"
+                        $regex = [regex] "^\s*(\d+)\s*-\s*(\d+)\s*$"
+                        $match = $regex.Match($episodeInput)
+                        if ($match.Success) {
+                            $validInput = $true
+                            $rangeStart = [int]$match.Groups[1].Value
+                            $rangeEnd = [int]$match.Groups[2].Value
+                            $episodesArray = $rangeStart..$rangeEnd
+                            $isRange = $true
+                        }
+                        elseif ($episodeInput -match "^\s*\d+(\s*,\s*\d+)*\s*$") {
+                            $validInput = $true
+                            $episodesArray = $episodeInput -split "," | ForEach-Object { [int]$_.Trim() }
+                            $isRange = $false
+                        }
+                        else { 
+                            Write-Host "Invalid input. Please enter a valid range or comma-separated list." 
+                        }
+                    }
+                    # If the input is a range, ask for filename modification.
+                    if ($isRange) {
+                        if (Get-YesNo 'Do you want to modify the Filename number of the generated Scripts?(Y/N)') {
+                            $newCounter = Read-Host "Input the new episode start for the scripts (eg: 01, 13, 25)"
+                            if ($newCounter -match "^\d+$") {
+                                $counter = [int]$newCounter
+                                $useModified = $true
+                            } else {
+                                Write-Host "Invalid number, defaulting to 1."
+                                $counter = 1
+                                $useModified = $true
+                            }
+                        } else {
+                            $useModified = $false
+                        }
+                    } else {
+                        $useModified = $false
+                    }
+                    foreach ($ep in $episodesArray) {
+                        if ($useModified) {
+                            $epPadded = ([string]::Format("{0:D2}", $counter))
+                            $currentEpTag = $epPadded
+                            $counter++
+                        } else {
+                            $epPadded = ([string]::Format("{0:D2}", $ep))
+                            $currentEpTag = $epPadded
+                        }
+                        $dynamicFileNameArg = '--fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E' + $currentEpTag + ' [${height}p]"'
+                        $batFileName = $batShowTitle + "_Season_" + $batSeason + "_E" + $currentEpTag + ".bat"
+                        $episodeOption = "-e " + $ep
+                        if ($serviceOption -eq "hidive") {
+                            $cmd1 = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                            $cmd2 = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                            $pushdMaster = 'pushd "' + $masterPath + '"'
+                            $callAuth = 'call "' + $authScriptCurrent + '"'
+                            $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                            $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                            $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+                            $setBase = '    set "BASE=%%~nV"'
+                            $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
+                            $batchContent = @(
+                                "@echo off",
+                                "chcp 65001",
+                                "@echo off",
+                                "SET ORIGINAL=%CD%",
+                                $pushdMaster,
+                                $callAuth,
+                                $cmd1,
+                                $cmd2,
+                                $pushdVideos,
+                                "",
+                                $callRename,
+                                "popd",
+                                $moveVideos,
+                                "if not defined SKIP_PAUSE pause"
+                            )
+                        } else {
+                            $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                            $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs edge --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                            $pushdMaster = 'pushd "' + $masterPath + '"'
+                            $callAuth = 'call "' + $authScriptCurrent + '"'
+                            $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                            $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                            $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+                            $setBase = '    set "BASE=%%~nV"'
+                            $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
+                            $batchContent = @(
+                                "@echo off",
+                                "chcp 65001 >nul",
+                                $pushdMaster,
+                                $callAuth,
+                                $cmd1,
+                                $cmd2,
+                                "REM -MUX AUDIO INTO VIDEO-",
+                                "setlocal enabledelayedexpansion",
+                                $pushdVideos,
+                                "",
+                                "for %%V in (*.mkv) do (",
+                                $setBase,
+                                $setAudio,
+                                "",
+                                "    rem - mux: first the video+subs, then BEFORE the audio file we attach these options:",
+                                "    mkvmerge -o ""!BASE!_muxed.mkv"" ^",
+                                "      ""%%V"" ^",
+                                "      --language 0:ja-JP --track-name 0:""Japanese"" ^",
+                                "      ""!AUDIO!""",
+                                "",
+                                "    if exist ""!BASE!_muxed.mkv"" (",
+                                "        del ""%%V""",
+                                "        ren ""!BASE!_muxed.mkv"" ""%%~nxV""",
+                                "        del ""!AUDIO!""",
+                                "    ) else (",
+                                "        echo ERROR: mux failed for !BASE!",
+                                "    )",
+                                ")",
+                                "",
+                                "popd",
+                                "endlocal",
+                                "",
+                                "popd",
+                                $moveVideos,
+                                "if not defined SKIP_PAUSE pause"
+                            )
+                        }
+                        $batFile = $scriptOutputPath + "\" + $batFileName
+                        [System.IO.File]::WriteAllLines($batFile, $batchContent, (New-Object System.Text.UTF8Encoding($false)))
+                        Write-Host "Created script: " + $batFile
+                    }
+                }
+            }
+        }
+        if (-not (Get-YesNo "Do you want to search for another anime? (yes/no)")) { break }
+    }
+}
+# --- End Experimental Crunchyroll Script Generator ---
+
+# --- Service & Master Path Setup ---
+$chosenService = Get-SelectionFromListWithDefault "Choose a service" $services "Crunchyroll"
+if ($chosenService -eq "Hidive") {
+    $masterPath = "REPLACE_WITH_YOUR_HIDIVE_PATH".Trim()
+    $authScriptCurrent = "$masterPath\Auth_HDV.bat"
+    $serviceOption = "hidive"
+    $extraParam = ""
+} else {
+    $masterPath = "REPLACE_WITH_YOUR_CRUNCHY_PATH".Trim()
+    $serviceOption = "crunchy"
+    $authScriptCurrent = "$masterPath\Auth_CR.bat"
+    $aniDLPath = "$masterPath\aniDL.exe"
+    $scriptOutputPath = "$masterPath\Generated_Scripts"
+    if (!(Test-Path $scriptOutputPath)) { New-Item -ItemType Directory -Path $scriptOutputPath | Out-Null }
+    # --- NEW: Experimental prompt for Crunchyroll ---
+    if (Get-ExperimentalFeatureConsent) {
+        Generate-ExperimentalCrunchyrollScript -aniDLPath $aniDLPath -masterPath $masterPath -authScriptCurrent $authScriptCurrent -scriptOutputPath $scriptOutputPath
+        return
+    }
+    $extraParam = @('--crapi','web')
+}
+$pushdLine = 'pushd "$masterPath"'
+$moveLine  = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
 
 # --- Main Loop ---
 while ($true) {
@@ -252,13 +633,12 @@ while ($true) {
     foreach ($series in $selectedSeries) {
         if ($serviceOption -eq "crunchy" -and -not [string]::IsNullOrWhiteSpace($series.ZID)) {
             $flag = "--srz"
-            $idForCmd = $series.ZID
+            $seriesID = $series.ZID
         } else {
             $flag = "-s"
-            $idForCmd = $series.SeriesID
+            $seriesID = $series.SeriesID
         }
         
-        $seriesID = $idForCmd
         $origShowTitle = ($series.Title -replace '[\\/:*?"<>|]', '') -replace '\s+', ' '
         if ($series.Season -match "^\d+$") {
             if ([int]$series.Season -lt 10) { $origSeason = "0" + [int]$series.Season }
@@ -336,14 +716,21 @@ while ($true) {
             # For 'all' episodes, pass only --all to the generated script.
             $episodeOption = "--all"
             $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+            $pushdMaster = 'pushd "' + $masterPath + '"'
+            $callAuth = 'call "' + $authScriptCurrent + '"'
+            $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+            $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+            $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+            $setBase = '    set "BASE=%%~nV"'
+            $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
             $batchContent = @(
                 "@echo off",
-                "chcp 65001 >nul",
-                $pushdLine,
-                "call ""$authScriptCurrent""",
-                "popd",
+                "chcp 65001",
+                $pushdMaster,
+                $callAuth,
                 $cmd,
-                $moveLine,
+                "popd",
+                $moveVideos,
                 "if not defined SKIP_PAUSE pause"
             )
             $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + ".bat"
@@ -359,31 +746,77 @@ while ($true) {
                 }
                 $episodeOption = "-e " + $episodeInput
                 if ($serviceOption -eq "hidive") {
-                    $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                    $cmd1 = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                    $cmd2 = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                    $pushdMaster = 'pushd "' + $masterPath + '"'
+                    $callAuth = 'call "' + $authScriptCurrent + '"'
+                    $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                    $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                    $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+                    $setBase = '    set "BASE=%%~nV"'
+                    $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
                     $batchContent = @(
+                        "@echo off",
                         "chcp 65001",
                         "@echo off",
                         "SET ORIGINAL=%CD%",
-                        "pushd ""$masterPath""",
-                        "call ""$authScriptCurrent""",
+                        $pushdMaster,
+                        $callAuth,
+                        $cmd1,
+                        $cmd2,
+                        $pushdVideos,
+                        "",
+                        $callRename,
                         "popd",
-                        $cmd,
-                        "pushd ""$masterPath\videos""",
-                        "call ""$masterPath\videos\rename_mkv_tracks.bat""",
-                        "move ""$masterPath\videos\*.mkv"" ""%ORIGINAL%""",
+                        $moveVideos,
                         "if not defined SKIP_PAUSE pause"
                     )
                 }
                 else {
-                    $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                    $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                    $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs edge --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                    $pushdMaster = 'pushd "' + $masterPath + '"'
+                    $callAuth = 'call "' + $authScriptCurrent + '"'
+                    $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                    $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                    $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+                    $setBase = '    set "BASE=%%~nV"'
+                    $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
                     $batchContent = @(
                         "@echo off",
                         "chcp 65001 >nul",
-                        $pushdLine,
-                        "call ""$authScriptCurrent""",
+                        $pushdMaster,
+                        $callAuth,
+                        $cmd1,
+                        $cmd2,
+                        "REM -MUX AUDIO INTO VIDEO-",
+                        "setlocal enabledelayedexpansion",
+                        $pushdVideos,
+                        "",
+                        "for %%V in (*.mkv) do (",
+                        $setBase,
+                        $setAudio,
+                        "",
+                        "    rem - mux: first the video+subs, then BEFORE the audio file we attach these options:",
+                        "    mkvmerge -o ""!BASE!_muxed.mkv"" ^",
+                        "      ""%%V"" ^",
+                        "      --language 0:ja-JP --track-name 0:""Japanese"" ^",
+                        "      ""!AUDIO!""",
+                        "",
+                        "    if exist ""!BASE!_muxed.mkv"" (",
+                        "        del ""%%V""",
+                        "        ren ""!BASE!_muxed.mkv"" ""%%~nxV""",
+                        "        del ""!AUDIO!""",
+                        "    ) else (",
+                        "        echo ERROR: mux failed for !BASE!",
+                        "    )",
+                        ")",
+                        "",
                         "popd",
-                        $cmd,
-                        $moveLine,
+                        "endlocal",
+                        "",
+                        "popd",
+                        $moveVideos,
                         "if not defined SKIP_PAUSE pause"
                     )
                 }
@@ -445,30 +878,76 @@ while ($true) {
                     $batFileName = $batShowTitle + "_Season_" + $batSeason + "_E" + $currentEpTag + ".bat"
                     $episodeOption = "-e " + $ep
                     if ($serviceOption -eq "hidive") {
-                        $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd1 = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd2 = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $pushdMaster = 'pushd "' + $masterPath + '"'
+                        $callAuth = 'call "' + $authScriptCurrent + '"'
+                        $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                        $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                        $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+                        $setBase = '    set "BASE=%%~nV"'
+                        $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
                         $batchContent = @(
+                            "@echo off",
                             "chcp 65001",
                             "@echo off",
                             "SET ORIGINAL=%CD%",
-                            "pushd ""$masterPath""",
-                            "call ""$authScriptCurrent""",
+                            $pushdMaster,
+                            $callAuth,
+                            $cmd1,
+                            $cmd2,
+                            $pushdVideos,
+                            "",
+                            $callRename,
                             "popd",
-                            $cmd,
-                            "pushd ""$masterPath\videos""",
-                            "call ""$masterPath\videos\rename_mkv_tracks.bat""",
-                            "move ""$masterPath\videos\*.mkv"" ""%ORIGINAL%""",
+                            $moveVideos,
                             "if not defined SKIP_PAUSE pause"
                         )
                     } else {
-                        $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs edge --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $pushdMaster = 'pushd "' + $masterPath + '"'
+                        $callAuth = 'call "' + $authScriptCurrent + '"'
+                        $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                        $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                        $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
+                        $setBase = '    set "BASE=%%~nV"'
+                        $setAudio = '    set "AUDIO=!BASE!.Japanese.audio.m4s"'
                         $batchContent = @(
                             "@echo off",
                             "chcp 65001 >nul",
-                            $pushdLine,
-                            "call ""$authScriptCurrent""",
+                            $pushdMaster,
+                            $callAuth,
+                            $cmd1,
+                            $cmd2,
+                            "REM -MUX AUDIO INTO VIDEO-",
+                            "setlocal enabledelayedexpansion",
+                            $pushdVideos,
+                            "",
+                            "for %%V in (*.mkv) do (",
+                            $setBase,
+                            $setAudio,
+                            "",
+                            "    rem - mux: first the video+subs, then BEFORE the audio file we attach these options:",
+                            "    mkvmerge -o ""!BASE!_muxed.mkv"" ^",
+                            "      ""%%V"" ^",
+                            "      --language 0:ja-JP --track-name 0:""Japanese"" ^",
+                            "      ""!AUDIO!""",
+                            "",
+                            "    if exist ""!BASE!_muxed.mkv"" (",
+                            "        del ""%%V""",
+                            "        ren ""!BASE!_muxed.mkv"" ""%%~nxV""",
+                            "        del ""!AUDIO!""",
+                            "    ) else (",
+                            "        echo ERROR: mux failed for !BASE!",
+                            "    )",
+                            ")",
+                            "",
                             "popd",
-                            $cmd,
-                            $moveLine,
+                            "endlocal",
+                            "",
+                            "popd",
+                            $moveVideos,
                             "if not defined SKIP_PAUSE pause"
                         )
                     }
@@ -487,29 +966,36 @@ while ($true) {
             $skipForFilename = ($skipInput -replace "\s", "") -replace ",", "_"
             if ($serviceOption -eq "hidive") {
                 $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" --srz ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '"'
+                $pushdMaster = 'pushd "' + $masterPath + '"'
+                $callAuth = 'call "' + $authScriptCurrent + '"'
+                $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
                 $batchContent = @(
                     "chcp 65001",
                     "@echo off",
                     "SET ORIGINAL=%CD%",
-                    "pushd ""$masterPath""",
-                    "call ""$authScriptCurrent""",
-                    "popd",
+                    $pushdMaster,
+                    $callAuth,
                     $cmd,
-                    "pushd ""$masterPath\videos""",
-                    "call ""$masterPath\videos\rename_mkv_tracks.bat""",
-                    "move ""$masterPath\videos\*.mkv"" ""%ORIGINAL%""",
+                    $pushdVideos,
+                    $callRename,
+                    $moveVideos,
                     "if not defined SKIP_PAUSE pause"
                 )
             } else {
-                $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '"'
+                $pushdMaster = 'pushd "' + $masterPath + '"'
+                $callAuth = 'call "' + $authScriptCurrent + '"'
+                $pushdVideos = 'pushd "' + $masterPath + '\videos"'
+                $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
+                $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%ORIGINAL%"'
                 $batchContent = @(
                     "@echo off",
                     "chcp 65001 >nul",
-                    $pushdLine,
-                    "call ""$authScriptCurrent""",
-                    "popd",
+                    $pushdMaster,
+                    $callAuth,
                     $cmd,
-                    $moveLine,
+                    $moveVideos,
                     "if not defined SKIP_PAUSE pause"
                 )
             }
@@ -518,6 +1004,5 @@ while ($true) {
             Write-Host "Created script: " + $batFile
         }
     }
-    
     if (-not (Get-YesNo "Do you want to search for another anime? (yes/no)")) { break }
 }
