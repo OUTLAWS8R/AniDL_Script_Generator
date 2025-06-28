@@ -182,6 +182,14 @@ function Parse-Series {
     return $foundSeries
 }
 
+# --- Global Language map for easy extension ---
+$languageDetails = [ordered]@{
+    "Japanese" = @{ Code = 'ja-JP'; TrackName = 'Japanese' }
+    "Chinese"  = @{ Code = 'zh-CN'; TrackName = 'Chinese (Mainland China)' }
+    # Add more languages here in the future, e.g.:
+    # "English"  = @{ Code = 'en-US'; TrackName = 'English' }
+}
+
 # --- Experimental Crunchyroll Script Generator ---
 function Generate-ExperimentalCrunchyrollScript {
     param(
@@ -192,7 +200,7 @@ function Generate-ExperimentalCrunchyrollScript {
     )
     while ($true) {
         # Ask for anime name
-        $animeName = Read-Host "Enter Anime Name or type New to check the latest series (Experimental):"
+        $animeName = Read-Host "Enter Anime Name or type New to check the latest series (Experimental)"
         $serviceOption = "crunchy"
         $extraParam = @('--crapi','web')
         if ($animeName -ieq "new") {
@@ -241,16 +249,48 @@ function Generate-ExperimentalCrunchyrollScript {
                 $seriesID = $series.SeriesID
             }
             
-            # --- Language Prompts ---
+            # --- Revamped Language Prompts ---
+            $chosenDubLangCode = "ja-JP"
+            $chosenDubLangName = "Japanese"
+            $chosenDubTrackName = "Japanese"
+
+            Write-Host "--- Audio Language Selection ---" -ForegroundColor Yellow
             if ($series.Versions) {
                 $availableDubLangs = $series.Versions
-                $chosenDubLang = Get-SelectionFromListWithDefault "Choose a dub language to download:" $availableDubLangs "ja-JP"
-                $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" $availableDubLangs "ja-JP"
+                $chosenDubLangCode = Get-SelectionFromListWithDefault "Choose a dub language to download:" $availableDubLangs "ja-JP"
+                # Update name and track based on code selection
+                foreach ($langName in $languageDetails.Keys) {
+                    if ($languageDetails[$langName].Code -eq $chosenDubLangCode) {
+                        $chosenDubLangName = $langName
+                        $chosenDubTrackName = $languageDetails[$langName].TrackName
+                        break
+                    }
+                }
+            } else {
+                Write-Host "Audio versions were not listed in search results. Please choose manually."
+                $allowedLangNames = $languageDetails.Keys
+                $defaultLangName = ($allowedLangNames | Select-Object -First 1)
+                $prompt = "Choose a dub language to download [Default: $defaultLangName]"
+
+                while ($true) {
+                    $userInput = Read-Host $prompt
+                    if ([string]::IsNullOrWhiteSpace($userInput)) {
+                        break
+                    }
+                    $matchedKey = $allowedLangNames | Where-Object { $_ -eq $userInput }
+                    if ($matchedKey) {
+                        $chosenDubLangCode = $languageDetails[$matchedKey].Code
+                        $chosenDubLangName = $matchedKey
+                        $chosenDubTrackName = $languageDetails[$matchedKey].TrackName
+                        break
+                    }
+                    Write-Host "Invalid selection. Please enter one of: $($allowedLangNames -join ', ')" -ForegroundColor Red
+                }
             }
-            else {
-                $chosenDubLang = "ja-JP"
-                $chosenDefaultAudio = "ja-JP"
-            }
+
+            $availableDefaultAudio = if ($series.Versions) { $series.Versions } else { @($chosenDubLangCode) }
+            $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" $availableDefaultAudio $chosenDubLangCode
+            
             if ($series.Subtitles) {
                 $availableSubs = $series.Subtitles
                 $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script:" $availableSubs "en-US"
@@ -310,10 +350,15 @@ function Generate-ExperimentalCrunchyrollScript {
             $actualShowName = $cmdShowTitle
             $dynamicFileNameArg = '--fileName "Anime_Show - S' + $cmdSeason + 'E${episode} [${height}p]"'
             
+            # --- CORRECTED: Use $chosenDubTrackName for filename matching ---
+            $muxForLoopLine = '    for %%A in ("!EP!*' + $chosenDubTrackName + '.audio.m4s") do ('
+            $mkvmergeLine   = '        mkvmerge -o "!EP!_muxed.mkv" "%%V" --language 0:' + $chosenDubLangCode + ' --track-name 0:"' + $chosenDubTrackName + '" "!AUDIO!"'
+            $audioWarningLine = '        echo WARNING: no audio matching "!EP!*' + $chosenDubTrackName + '.audio.m4s" found for "%%~nxV"'
+            
             if ($episodeSelection -eq "all") {
                 $episodeOption = "--all"
-                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
                 $pushdVideos = 'pushd "' + $masterPath + '\videos"'
@@ -328,21 +373,32 @@ function Generate-ExperimentalCrunchyrollScript {
                     "popd",
                     $cmd1,
                     $cmd2,
-                    "REM -MUX AUDIO INTO VIDEO-",
+                    "REM --- MUX AUDIO AND RENAME ---",
                     "setlocal enabledelayedexpansion",
-                    "@echo off",
                     $pushdVideos,
                     'for %%V in ("Anime_Show - S*.mkv") do (',
-                    '    set "BASE=%%~nV"',
-                    '    set "AUDIO=!BASE!.Japanese.audio.m4s"',
-                    '    mkvmerge -o "!BASE!_muxed.mkv" "%%V" --language 0:ja-JP --track-name 0:"Japanese" "!AUDIO!"',
-                    '    if exist "!BASE!_muxed.mkv" ( del "%%V" & ren "!BASE!_muxed.mkv" "%%~nxV" & del "!AUDIO!" )',
+                    '    set "FULL=%%~nV"',
+                    '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
+                    '    set "EP=!EP:~0,-1!"',
+                    $muxForLoopLine,
+                    '        set "AUDIO=%%~nxA"',
+                    '    )',
+                    '    if defined AUDIO (',
+                    $mkvmergeLine,
+                    '        if exist "!EP!_muxed.mkv" (',
+                    '            del "%%V"',
+                    '            ren "!EP!_muxed.mkv" "%%~nxV"',
+                    '            del "!AUDIO!"',
+                    '        )',
+                    '        set "AUDIO="',
+                    '    ) else (',
+                    $audioWarningLine,
+                    '    )',
                     ')',
-                    'rem -- Rename Anime_Show to actual show name',
                     'for %%F in ("Anime_Show - S*.mkv") do (',
-                    '    set "NEWNAME=%%~nxF"',
-                    '    set "NEWNAME=!NEWNAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
-                    '    ren "%%~nxF" "!NEWNAME!"',
+                    '    set "FILENAME=%%~nxF"',
+                    '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
+                    '    ren "%%F" "!NEWNAME!"',
                     ')',
                     "popd",
                     "endlocal",
@@ -361,8 +417,8 @@ function Generate-ExperimentalCrunchyrollScript {
                         else { Write-Host "Invalid input. Please enter a valid range or comma-separated list." }
                     }
                     $episodeOption = "-e " + $episodeInput
-                    $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                    $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                    $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                    $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                     $pushdMaster = 'pushd "' + $masterPath + '"'
                     $callAuth = 'call "' + $authScriptCurrent + '"'
                     $pushdVideos = 'pushd "' + $masterPath + '\videos"'
@@ -377,21 +433,32 @@ function Generate-ExperimentalCrunchyrollScript {
                         "popd",
                         $cmd1,
                         $cmd2,
-                        "REM -MUX AUDIO INTO VIDEO-",
+                        "REM --- MUX AUDIO AND RENAME ---",
                         "setlocal enabledelayedexpansion",
-                        "@echo off",
                         $pushdVideos,
                         'for %%V in ("Anime_Show - S*.mkv") do (',
-                        '    set "BASE=%%~nV"',
-                        '    set "AUDIO=!BASE!.Japanese.audio.m4s"',
-                        '    mkvmerge -o "!BASE!_muxed.mkv" "%%V" --language 0:ja-JP --track-name 0:"Japanese" "!AUDIO!"',
-                        '    if exist "!BASE!_muxed.mkv" ( del "%%V" & ren "!BASE!_muxed.mkv" "%%~nxV" & del "!AUDIO!" )',
+                        '    set "FULL=%%~nV"',
+                        '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
+                        '    set "EP=!EP:~0,-1!"',
+                        $muxForLoopLine,
+                        '        set "AUDIO=%%~nxA"',
+                        '    )',
+                        '    if defined AUDIO (',
+                        $mkvmergeLine,
+                        '        if exist "!EP!_muxed.mkv" (',
+                        '            del "%%V"',
+                        '            ren "!EP!_muxed.mkv" "%%~nxV"',
+                        '            del "!AUDIO!"',
+                        '        )',
+                        '        set "AUDIO="',
+                        '    ) else (',
+                        $audioWarningLine,
+                        '    )',
                         ')',
-                        'rem -- Rename Anime_Show to actual show name',
                         'for %%F in ("Anime_Show - S*.mkv") do (',
-                        '    set "NEWNAME=%%~nxF"',
-                        '    set "NEWNAME=!NEWNAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
-                        '    ren "%%~nxF" "!NEWNAME!"',
+                        '    set "FILENAME=%%~nxF"',
+                        '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
+                        '    ren "%%F" "!NEWNAME!"',
                         ')',
                         "popd",
                         "endlocal",
@@ -406,7 +473,7 @@ function Generate-ExperimentalCrunchyrollScript {
                     $validInput = $false
                     while (-not $validInput) {
                         $episodeInput = Read-Host "Enter episode numbers or range for the script(s) -e (e.g., 1-3, 1,2,3)"
-                        if ($episodeInput -match "^\s*(\d+)\s*-\s*(\d+)\s*$") {
+                        if ($episodeInput -match "^\s*(\d+)\s*-\s*(\d+)\s*$" -or $episodeInput -match "^\s*\d+(\s*,\s*\d+)*\s*$") {
                             $validInput = $true
                             $match = [regex]::Match($episodeInput, "^\s*(\d+)\s*-\s*(\d+)\s*$")
                             $rangeStart = [int]$match.Groups[1].Value
@@ -439,8 +506,8 @@ function Generate-ExperimentalCrunchyrollScript {
                         $episodeOption = "-e " + $ep
                         $dynamicFileNameArg = '--fileName "Anime_Show - S' + $cmdSeason + 'E' + $currentEpTag + ' [${height}p]"'
                         
-                        $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                        $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                         $pushdMaster = 'pushd "' + $masterPath + '"'
                         $callAuth = 'call "' + $authScriptCurrent + '"'
                         $pushdVideos = 'pushd "' + $masterPath + '\videos"'
@@ -455,21 +522,32 @@ function Generate-ExperimentalCrunchyrollScript {
                             "popd",
                             $cmd1,
                             $cmd2,
-                            "REM -MUX AUDIO INTO VIDEO-",
+                            "REM --- MUX AUDIO AND RENAME ---",
                             "setlocal enabledelayedexpansion",
-                            "@echo off",
                             $pushdVideos,
                             'for %%V in ("Anime_Show - S*.mkv") do (',
-                            '    set "BASE=%%~nV"',
-                            '    set "AUDIO=!BASE!.Japanese.audio.m4s"',
-                            '    mkvmerge -o "!BASE!_muxed.mkv" "%%V" --language 0:ja-JP --track-name 0:"Japanese" "!AUDIO!"',
-                            '    if exist "!BASE!_muxed.mkv" ( del "%%V" & ren "!BASE!_muxed.mkv" "%%~nxV" & del "!AUDIO!" )',
+                            '    set "FULL=%%~nV"',
+                            '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
+                            '    set "EP=!EP:~0,-1!"',
+                            $muxForLoopLine,
+                            '        set "AUDIO=%%~nxA"',
+                            '    )',
+                            '    if defined AUDIO (',
+                            $mkvmergeLine,
+                            '        if exist "!EP!_muxed.mkv" (',
+                            '            del "%%V"',
+                            '            ren "!EP!_muxed.mkv" "%%~nxV"',
+                            '            del "!AUDIO!"',
+                            '        )',
+                            '        set "AUDIO="',
+                            '    ) else (',
+                            $audioWarningLine,
+                            '    )',
                             ')',
-                            'rem -- Rename Anime_Show to actual show name',
                             'for %%F in ("Anime_Show - S*.mkv") do (',
-                            '    set "NEWNAME=%%~nxF"',
-                            '    set "NEWNAME=!NEWNAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
-                            '    ren "%%~nxF" "!NEWNAME!"',
+                            '    set "FILENAME=%%~nxF"',
+                            '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
+                            '    ren "%%F" "!NEWNAME!"',
                             ')',
                             "popd",
                             "endlocal",
@@ -491,8 +569,8 @@ function Generate-ExperimentalCrunchyrollScript {
                 $skipForFilename = ($skipInput -replace "\s", "") -replace ",", "_"
                 $episodeOption = "--but -e " + $skipInput
                 
-                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
                 $pushdVideos = 'pushd "' + $masterPath + '\videos"'
@@ -507,21 +585,32 @@ function Generate-ExperimentalCrunchyrollScript {
                     "popd",
                     $cmd1,
                     $cmd2,
-                    "REM -MUX AUDIO INTO VIDEO-",
+                    "REM --- MUX AUDIO AND RENAME ---",
                     "setlocal enabledelayedexpansion",
-                    "@echo off",
                     $pushdVideos,
                     'for %%V in ("Anime_Show - S*.mkv") do (',
-                    '    set "BASE=%%~nV"',
-                    '    set "AUDIO=!BASE!.Japanese.audio.m4s"',
-                    '    mkvmerge -o "!BASE!_muxed.mkv" "%%V" --language 0:ja-JP --track-name 0:"Japanese" "!AUDIO!"',
-                    '    if exist "!BASE!_muxed.mkv" ( del "%%V" & ren "!BASE!_muxed.mkv" "%%~nxV" & del "!AUDIO!" )',
+                    '    set "FULL=%%~nV"',
+                    '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
+                    '    set "EP=!EP:~0,-1!"',
+                    $muxForLoopLine,
+                    '        set "AUDIO=%%~nxA"',
+                    '    )',
+                    '    if defined AUDIO (',
+                    $mkvmergeLine,
+                    '        if exist "!EP!_muxed.mkv" (',
+                    '            del "%%V"',
+                    '            ren "!EP!_muxed.mkv" "%%~nxV"',
+                    '            del "!AUDIO!"',
+                    '        )',
+                    '        set "AUDIO="',
+                    '    ) else (',
+                    $audioWarningLine,
+                    '    )',
                     ')',
-                    'rem -- Rename Anime_Show to actual show name',
                     'for %%F in ("Anime_Show - S*.mkv") do (',
-                    '    set "NEWNAME=%%~nxF"',
-                    '    set "NEWNAME=!NEWNAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
-                    '    ren "%%~nxF" "!NEWNAME!"',
+                    '    set "FILENAME=%%~nxF"',
+                    '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
+                    '    ren "%%F" "!NEWNAME!"',
                     ')',
                     "popd",
                     "endlocal",
@@ -541,14 +630,14 @@ function Generate-ExperimentalCrunchyrollScript {
 $chosenService = Get-SelectionFromListWithDefault "Choose a service" $services "Crunchyroll"
 
 if ($chosenService -eq "Hidive") {
-    $masterPath = "REPLACE_WITH_YOUR_HIDIVE_MASTER_PATH".Trim()
+    $masterPath = "REPLACE_WITH_YOUR_HIDIVE_PATH".Trim()
     $authScriptCurrent = "$masterPath\Auth_HDV.bat"
     $aniDLPath = "$masterPath\aniDL.exe"
     $scriptOutputPath = "$masterPath\Generated_Scripts"
     $serviceOption = "hidive"
     $extraParam = ""
 } else { # Crunchyroll
-    $masterPath = "REPLACE_WITH_YOUR_CRUNCHY_MASTER_PATH".Trim()
+    $masterPath = "REPLACE_WITH_YOUR_CRUNCHY_PATH".Trim()
     $authScriptCurrent = "$masterPath\Auth_CR.bat"
     $aniDLPath = "$masterPath\aniDL.exe"
     $scriptOutputPath = "$masterPath\Generated_Scripts"
@@ -650,16 +739,37 @@ while ($true) {
             $availableSubs = @("en-US", "ja-JP", "spa-419", "pt-BR")
             $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script:" $availableSubs "en-US"
         }
-        else {
+        else { # --- Crunchyroll Classic Language Selection ---
             if ($series.Versions) {
                 $availableDubLangs = $series.Versions
                 $chosenDubLang = Get-SelectionFromListWithDefault "Choose a dub language to download:" $availableDubLangs "ja-JP"
                 $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" $availableDubLangs "ja-JP"
             }
             else {
-                $chosenDubLang = "ja-JP"
-                $chosenDefaultAudio = "ja-JP"
+                Write-Host "--- Audio Language Selection ---" -ForegroundColor Yellow
+                Write-Host "Audio versions were not listed in search results. Please choose manually."
+                
+                $allowedLangNames = $languageDetails.Keys
+                $defaultLangName = ($allowedLangNames | Select-Object -First 1)
+                $prompt = "Choose a dub language to download [Default: $defaultLangName]"
+                
+                $chosenDubLang = 'ja-JP'
+                
+                while ($true) {
+                    $userInput = Read-Host $prompt
+                    if ([string]::IsNullOrWhiteSpace($userInput)) {
+                        break
+                    }
+                    $matchedKey = $allowedLangNames | Where-Object { $_ -eq $userInput }
+                    if ($matchedKey) {
+                        $chosenDubLang = $languageDetails[$matchedKey].Code
+                        break
+                    }
+                    Write-Host "Invalid selection. Please enter one of: $($allowedLangNames -join ', ')" -ForegroundColor Red
+                }
+                $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" @($chosenDubLang) $chosenDubLang
             }
+
             if ($series.Subtitles) {
                 $availableSubs = $series.Subtitles
                 $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script:" $availableSubs "en-US"
