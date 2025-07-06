@@ -350,16 +350,19 @@ function Generate-ExperimentalCrunchyrollScript {
             $actualShowName = $cmdShowTitle
             $dynamicFileNameArg = '--fileName "Anime_Show - S' + $cmdSeason + 'E${episode} [${height}p]"'
             
+            $videosSubDir = "videos"
+
             $failedMuxLogFile = "failed_mux_list.log"
+            $clearLogFile = 'del /Q "' + $videosSubDir + '\' + $failedMuxLogFile + '" 2>nul' 
             $audioWarningLine = '        echo WARNING: no audio matching "!EP!*' + $chosenDubTrackName + '.audio.m4s" found for "%%~nxV"'
             $logFailedFile = '        echo %%~nxV >> "' + $failedMuxLogFile + '"'
             
             $reportFailedFiles = @(
-                'if exist "' + $failedMuxLogFile + '" (',
+                'if exist "' + $videosSubDir + '\' + $failedMuxLogFile + '" (',
                 '    echo.',
                 '    echo ^>^>^> WARNING: Audio not found for the following files ^<^<^<',
-                '    type "' + $failedMuxLogFile + '"',
-                '    del "' + $failedMuxLogFile + '"',
+                '    type "' + $videosSubDir + '\' + $failedMuxLogFile + '"',
+                '    del /Q "' + $videosSubDir + '\' + $failedMuxLogFile + '"',
                 '    echo ^===================================================^',
                 '    echo.',
                 ')'
@@ -368,14 +371,17 @@ function Generate-ExperimentalCrunchyrollScript {
             $muxForLoopLine = '    for %%A in ("!EP!*' + $chosenDubTrackName + '.audio.m4s") do ('
             $mkvmergeLine   = '        mkvmerge -o "!EP!_muxed.mkv" "%%V" --language 0:' + $chosenDubLangCode + ' --track-name 0:"' + $chosenDubTrackName + '" "!AUDIO!"'
             
+            $delOriginalVideo = '            del /Q "%%V"'
+            $delOriginalAudio = '            del /Q "!AUDIO!"'
+            
             if ($episodeSelection -eq "all") {
                 $episodeOption = "--all"
                 $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                 $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
-                $pushdVideos = 'pushd "' + $masterPath + '\videos"'
-                $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
+                $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
+                $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%"'
                 $batchContent = @(
                     "@echo off",
                     "chcp 65001 >nul",
@@ -384,12 +390,12 @@ function Generate-ExperimentalCrunchyrollScript {
                     $pushdMaster,
                     $callAuth,
                     "popd",
+                    $clearLogFile,
                     $cmd1,
                     $cmd2,
                     "REM --- MUX AUDIO AND RENAME ---",
                     "setlocal enabledelayedexpansion",
                     $pushdVideos,
-                    'del "' + $failedMuxLogFile + '" 2>nul',
                     'for %%V in ("Anime_Show - S*.mkv") do (',
                     '    set "AUDIO="',
                     '    set "FULL=%%~nV"',
@@ -401,9 +407,9 @@ function Generate-ExperimentalCrunchyrollScript {
                     '    if defined AUDIO (',
                     $mkvmergeLine,
                     '        if exist "!EP!_muxed.mkv" (',
-                    '            del "%%V"',
+                    $delOriginalVideo,
                     '            ren "!EP!_muxed.mkv" "%%~nxV"',
-                    '            del "!AUDIO!"',
+                    $delOriginalAudio,
                     '        )',
                     '    ) else (',
                     $audioWarningLine,
@@ -415,12 +421,12 @@ function Generate-ExperimentalCrunchyrollScript {
                     '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
                     '    ren "%%F" "!NEWNAME!"',
                     ')',
-                    $reportFailedFiles,
                     "popd",
                     "endlocal",
                     $moveVideos,
                     "echo.",
-                    "echo --- Script finished. A list of files with missing audio was shown above if any were found. ---",
+                    "echo --- Script finished. ---",
+                    $reportFailedFiles,
                     "if not defined SKIP_PAUSE pause"
                 )
                 $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + ".bat"
@@ -439,8 +445,8 @@ function Generate-ExperimentalCrunchyrollScript {
                     $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                     $pushdMaster = 'pushd "' + $masterPath + '"'
                     $callAuth = 'call "' + $authScriptCurrent + '"'
-                    $pushdVideos = 'pushd "' + $masterPath + '\videos"'
-                    $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
+                    $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
+                    $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%"'
                     $batchContent = @(
                         "@echo off",
                         "chcp 65001 >nul",
@@ -449,12 +455,12 @@ function Generate-ExperimentalCrunchyrollScript {
                         $pushdMaster,
                         $callAuth,
                         "popd",
+                        $clearLogFile,
                         $cmd1,
                         $cmd2,
                         "REM --- MUX AUDIO AND RENAME ---",
                         "setlocal enabledelayedexpansion",
                         $pushdVideos,
-                        'del "' + $failedMuxLogFile + '" 2>nul',
                         'for %%V in ("Anime_Show - S*.mkv") do (',
                         '    set "AUDIO="',
                         '    set "FULL=%%~nV"',
@@ -466,9 +472,9 @@ function Generate-ExperimentalCrunchyrollScript {
                         '    if defined AUDIO (',
                         $mkvmergeLine,
                         '        if exist "!EP!_muxed.mkv" (',
-                        '            del "%%V"',
+                        $delOriginalVideo,
                         '            ren "!EP!_muxed.mkv" "%%~nxV"',
-                        '            del "!AUDIO!"',
+                        $delOriginalAudio,
                         '        )',
                         '    ) else (',
                         $audioWarningLine,
@@ -480,12 +486,12 @@ function Generate-ExperimentalCrunchyrollScript {
                         '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
                         '    ren "%%F" "!NEWNAME!"',
                         ')',
-                        $reportFailedFiles,
                         "popd",
                         "endlocal",
                         $moveVideos,
                         "echo.",
-                        "echo --- Script finished. A list of files with missing audio was shown above if any were found. ---",
+                        "echo --- Script finished. ---",
+                        $reportFailedFiles,
                         "if not defined SKIP_PAUSE pause"
                     )
                     $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + ".bat"
@@ -534,8 +540,8 @@ function Generate-ExperimentalCrunchyrollScript {
                         $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                         $pushdMaster = 'pushd "' + $masterPath + '"'
                         $callAuth = 'call "' + $authScriptCurrent + '"'
-                        $pushdVideos = 'pushd "' + $masterPath + '\videos"'
-                        $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
+                        $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
+                        $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%"'
                         $batchContent = @(
                             "@echo off",
                             "chcp 65001 >nul",
@@ -544,12 +550,12 @@ function Generate-ExperimentalCrunchyrollScript {
                             $pushdMaster,
                             $callAuth,
                             "popd",
+                            $clearLogFile,
                             $cmd1,
                             $cmd2,
                             "REM --- MUX AUDIO AND RENAME ---",
                             "setlocal enabledelayedexpansion",
                             $pushdVideos,
-                            'del "' + $failedMuxLogFile + '" 2>nul',
                             'for %%V in ("Anime_Show - S*.mkv") do (',
                             '    set "AUDIO="',
                             '    set "FULL=%%~nV"',
@@ -561,9 +567,9 @@ function Generate-ExperimentalCrunchyrollScript {
                             '    if defined AUDIO (',
                             $mkvmergeLine,
                             '        if exist "!EP!_muxed.mkv" (',
-                            '            del "%%V"',
+                            $delOriginalVideo,
                             '            ren "!EP!_muxed.mkv" "%%~nxV"',
-                            '            del "!AUDIO!"',
+                            $delOriginalAudio,
                             '        )',
                             '    ) else (',
                             $audioWarningLine,
@@ -575,12 +581,12 @@ function Generate-ExperimentalCrunchyrollScript {
                             '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
                             '    ren "%%F" "!NEWNAME!"',
                             ')',
-                            $reportFailedFiles,
                             "popd",
                             "endlocal",
                             $moveVideos,
                             "echo.",
-                            "echo --- Script finished. A list of files with missing audio was shown above if any were found. ---",
+                            "echo --- Script finished. ---",
+                            $reportFailedFiles,
                             "if not defined SKIP_PAUSE pause"
                         )
                         $batFile = $scriptOutputPath + "\" + $batFileName
@@ -602,8 +608,8 @@ function Generate-ExperimentalCrunchyrollScript {
                 $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
-                $pushdVideos = 'pushd "' + $masterPath + '\videos"'
-                $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
+                $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
+                $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%"'
                 $batchContent = @(
                     "@echo off",
                     "chcp 65001 >nul",
@@ -612,12 +618,12 @@ function Generate-ExperimentalCrunchyrollScript {
                     $pushdMaster,
                     $callAuth,
                     "popd",
+                    $clearLogFile,
                     $cmd1,
                     $cmd2,
                     "REM --- MUX AUDIO AND RENAME ---",
                     "setlocal enabledelayedexpansion",
                     $pushdVideos,
-                    'del "' + $failedMuxLogFile + '" 2>nul',
                     'for %%V in ("Anime_Show - S*.mkv") do (',
                     '    set "AUDIO="',
                     '    set "FULL=%%~nV"',
@@ -629,9 +635,9 @@ function Generate-ExperimentalCrunchyrollScript {
                     '    if defined AUDIO (',
                     $mkvmergeLine,
                     '        if exist "!EP!_muxed.mkv" (',
-                    '            del "%%V"',
+                    $delOriginalVideo,
                     '            ren "!EP!_muxed.mkv" "%%~nxV"',
-                    '            del "!AUDIO!"',
+                    $delOriginalAudio,
                     '        )',
                     '    ) else (',
                     $audioWarningLine,
@@ -643,12 +649,12 @@ function Generate-ExperimentalCrunchyrollScript {
                     '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
                     '    ren "%%F" "!NEWNAME!"',
                     ')',
-                    $reportFailedFiles,
                     "popd",
                     "endlocal",
                     $moveVideos,
                     "echo.",
-                    "echo --- Script finished. A list of files with missing audio was shown above if any were found. ---",
+                    "echo --- Script finished. ---",
+                    $reportFailedFiles,
                     "if not defined SKIP_PAUSE pause"
                 )
                 $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + "_all-but-" + $skipForFilename + ".bat"
