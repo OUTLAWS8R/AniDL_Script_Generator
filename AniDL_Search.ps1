@@ -350,10 +350,23 @@ function Generate-ExperimentalCrunchyrollScript {
             $actualShowName = $cmdShowTitle
             $dynamicFileNameArg = '--fileName "Anime_Show - S' + $cmdSeason + 'E${episode} [${height}p]"'
             
-            # --- CORRECTED: Use $chosenDubTrackName for filename matching ---
+            $failedMuxLogFile = "failed_mux_list.log"
+            $audioWarningLine = '        echo WARNING: no audio matching "!EP!*' + $chosenDubTrackName + '.audio.m4s" found for "%%~nxV"'
+            $logFailedFile = '        echo %%~nxV >> "' + $failedMuxLogFile + '"'
+            
+            $reportFailedFiles = @(
+                'if exist "' + $failedMuxLogFile + '" (',
+                '    echo.',
+                '    echo ^>^>^> WARNING: Audio not found for the following files ^<^<^<',
+                '    type "' + $failedMuxLogFile + '"',
+                '    del "' + $failedMuxLogFile + '"',
+                '    echo ^===================================================^',
+                '    echo.',
+                ')'
+            )
+            
             $muxForLoopLine = '    for %%A in ("!EP!*' + $chosenDubTrackName + '.audio.m4s") do ('
             $mkvmergeLine   = '        mkvmerge -o "!EP!_muxed.mkv" "%%V" --language 0:' + $chosenDubLangCode + ' --track-name 0:"' + $chosenDubTrackName + '" "!AUDIO!"'
-            $audioWarningLine = '        echo WARNING: no audio matching "!EP!*' + $chosenDubTrackName + '.audio.m4s" found for "%%~nxV"'
             
             if ($episodeSelection -eq "all") {
                 $episodeOption = "--all"
@@ -376,7 +389,9 @@ function Generate-ExperimentalCrunchyrollScript {
                     "REM --- MUX AUDIO AND RENAME ---",
                     "setlocal enabledelayedexpansion",
                     $pushdVideos,
+                    'del "' + $failedMuxLogFile + '" 2>nul',
                     'for %%V in ("Anime_Show - S*.mkv") do (',
+                    '    set "AUDIO="',
                     '    set "FULL=%%~nV"',
                     '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
                     '    set "EP=!EP:~0,-1!"',
@@ -390,9 +405,9 @@ function Generate-ExperimentalCrunchyrollScript {
                     '            ren "!EP!_muxed.mkv" "%%~nxV"',
                     '            del "!AUDIO!"',
                     '        )',
-                    '        set "AUDIO="',
                     '    ) else (',
                     $audioWarningLine,
+                    $logFailedFile,
                     '    )',
                     ')',
                     'for %%F in ("Anime_Show - S*.mkv") do (',
@@ -400,9 +415,12 @@ function Generate-ExperimentalCrunchyrollScript {
                     '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
                     '    ren "%%F" "!NEWNAME!"',
                     ')',
+                    $reportFailedFiles,
                     "popd",
                     "endlocal",
                     $moveVideos,
+                    "echo.",
+                    "echo --- Script finished. A list of files with missing audio was shown above if any were found. ---",
                     "if not defined SKIP_PAUSE pause"
                 )
                 $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + ".bat"
@@ -436,7 +454,9 @@ function Generate-ExperimentalCrunchyrollScript {
                         "REM --- MUX AUDIO AND RENAME ---",
                         "setlocal enabledelayedexpansion",
                         $pushdVideos,
+                        'del "' + $failedMuxLogFile + '" 2>nul',
                         'for %%V in ("Anime_Show - S*.mkv") do (',
+                        '    set "AUDIO="',
                         '    set "FULL=%%~nV"',
                         '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
                         '    set "EP=!EP:~0,-1!"',
@@ -450,9 +470,9 @@ function Generate-ExperimentalCrunchyrollScript {
                         '            ren "!EP!_muxed.mkv" "%%~nxV"',
                         '            del "!AUDIO!"',
                         '        )',
-                        '        set "AUDIO="',
                         '    ) else (',
                         $audioWarningLine,
+                        $logFailedFile,
                         '    )',
                         ')',
                         'for %%F in ("Anime_Show - S*.mkv") do (',
@@ -460,9 +480,12 @@ function Generate-ExperimentalCrunchyrollScript {
                         '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
                         '    ren "%%F" "!NEWNAME!"',
                         ')',
+                        $reportFailedFiles,
                         "popd",
                         "endlocal",
                         $moveVideos,
+                        "echo.",
+                        "echo --- Script finished. A list of files with missing audio was shown above if any were found. ---",
                         "if not defined SKIP_PAUSE pause"
                     )
                     $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + ".bat"
@@ -476,14 +499,15 @@ function Generate-ExperimentalCrunchyrollScript {
                         if ($episodeInput -match "^\s*(\d+)\s*-\s*(\d+)\s*$" -or $episodeInput -match "^\s*\d+(\s*,\s*\d+)*\s*$") {
                             $validInput = $true
                             $match = [regex]::Match($episodeInput, "^\s*(\d+)\s*-\s*(\d+)\s*$")
-                            $rangeStart = [int]$match.Groups[1].Value
-                            $rangeEnd = [int]$match.Groups[2].Value
-                            $episodesArray = $rangeStart..$rangeEnd
-                            $isRange = $true
-                        } elseif ($episodeInput -match "^\s*\d+(\s*,\s*\d+)*\s*$") {
-                            $validInput = $true
-                            $episodesArray = $episodeInput -split "," | ForEach-Object { [int]$_.Trim() }
-                            $isRange = $false
+                            if ($match.Success) {
+                                $rangeStart = [int]$match.Groups[1].Value
+                                $rangeEnd = [int]$match.Groups[2].Value
+                                $episodesArray = $rangeStart..$rangeEnd
+                                $isRange = $true
+                            } else {
+                                $episodesArray = $episodeInput -split "," | ForEach-Object { [int]$_.Trim() }
+                                $isRange = $false
+                            }
                         } else { Write-Host "Invalid input. Please enter a valid range or comma-separated list." }
                     }
                     if ($isRange) {
@@ -525,7 +549,9 @@ function Generate-ExperimentalCrunchyrollScript {
                             "REM --- MUX AUDIO AND RENAME ---",
                             "setlocal enabledelayedexpansion",
                             $pushdVideos,
+                            'del "' + $failedMuxLogFile + '" 2>nul',
                             'for %%V in ("Anime_Show - S*.mkv") do (',
+                            '    set "AUDIO="',
                             '    set "FULL=%%~nV"',
                             '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
                             '    set "EP=!EP:~0,-1!"',
@@ -539,9 +565,9 @@ function Generate-ExperimentalCrunchyrollScript {
                             '            ren "!EP!_muxed.mkv" "%%~nxV"',
                             '            del "!AUDIO!"',
                             '        )',
-                            '        set "AUDIO="',
                             '    ) else (',
                             $audioWarningLine,
+                            $logFailedFile,
                             '    )',
                             ')',
                             'for %%F in ("Anime_Show - S*.mkv") do (',
@@ -549,9 +575,12 @@ function Generate-ExperimentalCrunchyrollScript {
                             '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
                             '    ren "%%F" "!NEWNAME!"',
                             ')',
+                            $reportFailedFiles,
                             "popd",
                             "endlocal",
                             $moveVideos,
+                            "echo.",
+                            "echo --- Script finished. A list of files with missing audio was shown above if any were found. ---",
                             "if not defined SKIP_PAUSE pause"
                         )
                         $batFile = $scriptOutputPath + "\" + $batFileName
@@ -588,7 +617,9 @@ function Generate-ExperimentalCrunchyrollScript {
                     "REM --- MUX AUDIO AND RENAME ---",
                     "setlocal enabledelayedexpansion",
                     $pushdVideos,
+                    'del "' + $failedMuxLogFile + '" 2>nul',
                     'for %%V in ("Anime_Show - S*.mkv") do (',
+                    '    set "AUDIO="',
                     '    set "FULL=%%~nV"',
                     '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
                     '    set "EP=!EP:~0,-1!"',
@@ -602,9 +633,9 @@ function Generate-ExperimentalCrunchyrollScript {
                     '            ren "!EP!_muxed.mkv" "%%~nxV"',
                     '            del "!AUDIO!"',
                     '        )',
-                    '        set "AUDIO="',
                     '    ) else (',
                     $audioWarningLine,
+                    $logFailedFile,
                     '    )',
                     ')',
                     'for %%F in ("Anime_Show - S*.mkv") do (',
@@ -612,9 +643,12 @@ function Generate-ExperimentalCrunchyrollScript {
                     '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
                     '    ren "%%F" "!NEWNAME!"',
                     ')',
+                    $reportFailedFiles,
                     "popd",
                     "endlocal",
                     $moveVideos,
+                    "echo.",
+                    "echo --- Script finished. A list of files with missing audio was shown above if any were found. ---",
                     "if not defined SKIP_PAUSE pause"
                 )
                 $batFile = $scriptOutputPath + "\" + $batShowTitle + "_Season_" + $batSeason + "_all-but-" + $skipForFilename + ".bat"
@@ -646,8 +680,7 @@ if ($chosenService -eq "Hidive") {
     if (!(Test-Path $scriptOutputPath)) { New-Item -ItemType Directory -Path $scriptOutputPath | Out-Null }
     
     $useExperimental = Get-ExperimentalFeatureConsent
-    Write-Host "DEBUG: Experimental feature consent: $useExperimental"
-
+    
     if ($useExperimental -eq $true) {
         Generate-ExperimentalCrunchyrollScript -aniDLPath $aniDLPath -masterPath $masterPath -authScriptCurrent $authScriptCurrent -scriptOutputPath $scriptOutputPath
         exit # Exit after experimental script generation is complete
