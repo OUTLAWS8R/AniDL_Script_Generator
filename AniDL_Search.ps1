@@ -287,9 +287,6 @@ function Generate-ExperimentalCrunchyrollScript {
                     Write-Host "Invalid selection. Please enter one of: $($allowedLangNames -join ', ')" -ForegroundColor Red
                 }
             }
-
-            $availableDefaultAudio = if ($series.Versions) { $series.Versions } else { @($chosenDubLangCode) }
-            $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" $availableDefaultAudio $chosenDubLangCode
             
             if ($series.Subtitles) {
                 $availableSubs = $series.Subtitles
@@ -348,15 +345,22 @@ function Generate-ExperimentalCrunchyrollScript {
             }
             
             $actualShowName = $cmdShowTitle
+            $batchEscapedActualShowName = $actualShowName -replace '!', '^!'
+            
             $dynamicFileNameArg = '--fileName "Anime_Show - S' + $cmdSeason + 'E${episode} [${height}p]"'
             
             $videosSubDir = "videos"
 
             $failedMuxLogFile = "failed_mux_list.log"
             $clearLogFile = 'del /Q "' + $videosSubDir + '\' + $failedMuxLogFile + '" 2>nul' 
-            $audioWarningLine = '        echo WARNING: no audio matching "!EP!*' + $chosenDubTrackName + '.audio.m4s" found for "%%~nxV"'
-            $logFailedFile = '        echo %%~nxV >> "' + $failedMuxLogFile + '"'
             
+            # --- HEHE ---
+            $muxingMessage = @(
+                "echo.",
+                "echo --- Downloads complete. Now for the fucking magic: Muxing and Renaming... ---",
+                "echo."
+            )
+
             $reportFailedFiles = @(
                 'if exist "' + $videosSubDir + '\' + $failedMuxLogFile + '" (',
                 '    echo.',
@@ -368,59 +372,54 @@ function Generate-ExperimentalCrunchyrollScript {
                 ')'
             )
             
-            $muxForLoopLine = '    for %%A in ("!EP!*' + $chosenDubTrackName + '.audio.m4s") do ('
-            $mkvmergeLine   = '        mkvmerge -o "!EP!_muxed.mkv" "%%V" --language 0:' + $chosenDubLangCode + ' --track-name 0:"' + $chosenDubTrackName + '" "!AUDIO!"'
-            
-            $delOriginalVideo = '            del /Q "%%V"'
-            $delOriginalAudio = '            del /Q "!AUDIO!"'
-            
+            $muxAndRenameLogic = @(
+                'for %%V in ("Anime_Show - S*.mkv") do (',
+                '    set "AUDIO="',
+                '    set "FULL=%%~nV"',
+                "    for %%A in (`"!FULL!*$($chosenDubTrackName).audio.m4s`") do set `"AUDIO=%%~nxA`"",
+                '    if defined AUDIO (',
+                "        mkvmerge -q -o `"!FULL!_muxed.mkv`" `"%%V`" --language 0:$($chosenDubLangCode) --track-name 0:`"$($chosenDubTrackName)`" `"!AUDIO!`"",
+                '        if exist "!FULL!_muxed.mkv" (',
+                '            del /Q "%%V"',
+                '            del /Q "!AUDIO!"',
+                '        )',
+                '    ) else (',
+                "        echo WARNING: no audio matching `"!FULL!*$($chosenDubTrackName).audio.m4s`" found for `"%%~nxV`"",
+                "        echo %%~nxV >> `"$($failedMuxLogFile)`"",
+                '    )',
+                ')',
+                'for %%F in ("Anime_Show - S*_muxed.mkv") do (',
+                '    set "filename=%%~nxF"',
+                '    set "no_muxed=!filename:_muxed=!"',
+                '    call set "newname=%%no_muxed:Anime_Show=%ACTUAL_SHOW_NAME%%%"',
+                '    call ren "%%F" "!newname!"',
+                ')'
+            )
+
             if ($episodeSelection -eq "all") {
                 $episodeOption = "--all"
-                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
                 $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
-                $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%"'
+                $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%" 2>nul'
                 $batchContent = @(
                     "@echo off",
                     "chcp 65001 >nul",
                     "SET ORIGINAL=%CD%",
-                    "set `"ACTUAL_SHOW_NAME=$($actualShowName -replace '[\r\n\t]', ' ')`"",
+                    "set `"ACTUAL_SHOW_NAME=$($batchEscapedActualShowName -replace '[\r\n\t]', ' ')`"",
                     $pushdMaster,
                     $callAuth,
                     "popd",
                     $clearLogFile,
                     $cmd1,
-                    $cmd2,
+                    $cmd2
+                ) + $muxingMessage + @(
                     "REM --- MUX AUDIO AND RENAME ---",
                     "setlocal enabledelayedexpansion",
-                    $pushdVideos,
-                    'for %%V in ("Anime_Show - S*.mkv") do (',
-                    '    set "AUDIO="',
-                    '    set "FULL=%%~nV"',
-                    '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
-                    '    set "EP=!EP:~0,-1!"',
-                    $muxForLoopLine,
-                    '        set "AUDIO=%%~nxA"',
-                    '    )',
-                    '    if defined AUDIO (',
-                    $mkvmergeLine,
-                    '        if exist "!EP!_muxed.mkv" (',
-                    $delOriginalVideo,
-                    '            ren "!EP!_muxed.mkv" "%%~nxV"',
-                    $delOriginalAudio,
-                    '        )',
-                    '    ) else (',
-                    $audioWarningLine,
-                    $logFailedFile,
-                    '    )',
-                    ')',
-                    'for %%F in ("Anime_Show - S*.mkv") do (',
-                    '    set "FILENAME=%%~nxF"',
-                    '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
-                    '    ren "%%F" "!NEWNAME!"',
-                    ')',
+                    $pushdVideos
+                ) + $muxAndRenameLogic + @(
                     "popd",
                     "endlocal",
                     $moveVideos,
@@ -441,51 +440,28 @@ function Generate-ExperimentalCrunchyrollScript {
                         else { Write-Host "Invalid input. Please enter a valid range or comma-separated list." }
                     }
                     $episodeOption = "-e " + $episodeInput
-                    $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                    $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                    $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                    $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                     $pushdMaster = 'pushd "' + $masterPath + '"'
                     $callAuth = 'call "' + $authScriptCurrent + '"'
                     $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
-                    $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%"'
+                    $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%" 2>nul'
                     $batchContent = @(
                         "@echo off",
                         "chcp 65001 >nul",
                         "SET ORIGINAL=%CD%",
-                        "set `"ACTUAL_SHOW_NAME=$($actualShowName -replace '[\r\n\t]', ' ')`"",
+                        "set `"ACTUAL_SHOW_NAME=$($batchEscapedActualShowName -replace '[\r\n\t]', ' ')`"",
                         $pushdMaster,
                         $callAuth,
                         "popd",
                         $clearLogFile,
                         $cmd1,
-                        $cmd2,
+                        $cmd2
+                    ) + $muxingMessage + @(
                         "REM --- MUX AUDIO AND RENAME ---",
                         "setlocal enabledelayedexpansion",
-                        $pushdVideos,
-                        'for %%V in ("Anime_Show - S*.mkv") do (',
-                        '    set "AUDIO="',
-                        '    set "FULL=%%~nV"',
-                        '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
-                        '    set "EP=!EP:~0,-1!"',
-                        $muxForLoopLine,
-                        '        set "AUDIO=%%~nxA"',
-                        '    )',
-                        '    if defined AUDIO (',
-                        $mkvmergeLine,
-                        '        if exist "!EP!_muxed.mkv" (',
-                        $delOriginalVideo,
-                        '            ren "!EP!_muxed.mkv" "%%~nxV"',
-                        $delOriginalAudio,
-                        '        )',
-                        '    ) else (',
-                        $audioWarningLine,
-                        $logFailedFile,
-                        '    )',
-                        ')',
-                        'for %%F in ("Anime_Show - S*.mkv") do (',
-                        '    set "FILENAME=%%~nxF"',
-                        '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
-                        '    ren "%%F" "!NEWNAME!"',
-                        ')',
+                        $pushdVideos
+                    ) + $muxAndRenameLogic + @(
                         "popd",
                         "endlocal",
                         $moveVideos,
@@ -536,51 +512,28 @@ function Generate-ExperimentalCrunchyrollScript {
                         $episodeOption = "-e " + $ep
                         $dynamicFileNameArg = '--fileName "Anime_Show - S' + $cmdSeason + 'E' + $currentEpTag + ' [${height}p]"'
                         
-                        $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                        $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                         $pushdMaster = 'pushd "' + $masterPath + '"'
                         $callAuth = 'call "' + $authScriptCurrent + '"'
                         $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
-                        $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%"'
+                        $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%" 2>nul'
                         $batchContent = @(
                             "@echo off",
                             "chcp 65001 >nul",
                             "SET ORIGINAL=%CD%",
-                            "set `"ACTUAL_SHOW_NAME=$($actualShowName -replace '[\r\n\t]', ' ')`"",
+                            "set `"ACTUAL_SHOW_NAME=$($batchEscapedActualShowName -replace '[\r\n\t]', ' ')`"",
                             $pushdMaster,
                             $callAuth,
                             "popd",
                             $clearLogFile,
                             $cmd1,
-                            $cmd2,
+                            $cmd2
+                        ) + $muxingMessage + @(
                             "REM --- MUX AUDIO AND RENAME ---",
                             "setlocal enabledelayedexpansion",
-                            $pushdVideos,
-                            'for %%V in ("Anime_Show - S*.mkv") do (',
-                            '    set "AUDIO="',
-                            '    set "FULL=%%~nV"',
-                            '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
-                            '    set "EP=!EP:~0,-1!"',
-                            $muxForLoopLine,
-                            '        set "AUDIO=%%~nxA"',
-                            '    )',
-                            '    if defined AUDIO (',
-                            $mkvmergeLine,
-                            '        if exist "!EP!_muxed.mkv" (',
-                            $delOriginalVideo,
-                            '            ren "!EP!_muxed.mkv" "%%~nxV"',
-                            $delOriginalAudio,
-                            '        )',
-                            '    ) else (',
-                            $audioWarningLine,
-                            $logFailedFile,
-                            '    )',
-                            ')',
-                            'for %%F in ("Anime_Show - S*.mkv") do (',
-                            '    set "FILENAME=%%~nxF"',
-                            '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
-                            '    ren "%%F" "!NEWNAME!"',
-                            ')',
+                            $pushdVideos
+                        ) + $muxAndRenameLogic + @(
                             "popd",
                             "endlocal",
                             $moveVideos,
@@ -604,51 +557,28 @@ function Generate-ExperimentalCrunchyrollScript {
                 $skipForFilename = ($skipInput -replace "\s", "") -replace ",", "_"
                 $episodeOption = "--but -e " + $skipInput
                 
-                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
                 $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
-                $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%"'
+                $moveVideos = 'move "' + $masterPath + '\' + $videosSubDir + '\*.mkv" "%CD%" 2>nul'
                 $batchContent = @(
                     "@echo off",
                     "chcp 65001 >nul",
                     "SET ORIGINAL=%CD%",
-                    "set `"ACTUAL_SHOW_NAME=$($actualShowName -replace '[\r\n\t]', ' ')`"",
+                    "set `"ACTUAL_SHOW_NAME=$($batchEscapedActualShowName -replace '[\r\n\t]', ' ')`"",
                     $pushdMaster,
                     $callAuth,
                     "popd",
                     $clearLogFile,
                     $cmd1,
-                    $cmd2,
+                    $cmd2
+                ) + $muxingMessage + @(
                     "REM --- MUX AUDIO AND RENAME ---",
                     "setlocal enabledelayedexpansion",
-                    $pushdVideos,
-                    'for %%V in ("Anime_Show - S*.mkv") do (',
-                    '    set "AUDIO="',
-                    '    set "FULL=%%~nV"',
-                    '    for /f "tokens=1 delims=[" %%A in ("!FULL!") do set "EP=%%A"',
-                    '    set "EP=!EP:~0,-1!"',
-                    $muxForLoopLine,
-                    '        set "AUDIO=%%~nxA"',
-                    '    )',
-                    '    if defined AUDIO (',
-                    $mkvmergeLine,
-                    '        if exist "!EP!_muxed.mkv" (',
-                    $delOriginalVideo,
-                    '            ren "!EP!_muxed.mkv" "%%~nxV"',
-                    $delOriginalAudio,
-                    '        )',
-                    '    ) else (',
-                    $audioWarningLine,
-                    $logFailedFile,
-                    '    )',
-                    ')',
-                    'for %%F in ("Anime_Show - S*.mkv") do (',
-                    '    set "FILENAME=%%~nxF"',
-                    '    set "NEWNAME=!FILENAME:Anime_Show=%ACTUAL_SHOW_NAME%!"',
-                    '    ren "%%F" "!NEWNAME!"',
-                    ')',
+                    $pushdVideos
+                ) + $muxAndRenameLogic + @(
                     "popd",
                     "endlocal",
                     $moveVideos,
@@ -672,6 +602,12 @@ $chosenService = Get-SelectionFromListWithDefault "Choose a service" $services "
 if ($chosenService -eq "Hidive") {
     $masterPath = "REPLACE_WITH_YOUR_HIDIVE_PATH".Trim()
     $authScriptCurrent = "$masterPath\Auth_HDV.bat"
+    
+    # --- Execute Authentication Script ---
+    Write-Host "Authenticating..." -ForegroundColor Green
+    & cmd /c "$authScriptCurrent"
+    # ------------------------------------
+    
     $aniDLPath = "$masterPath\aniDL.exe"
     $scriptOutputPath = "$masterPath\Generated_Scripts"
     $serviceOption = "hidive"
@@ -679,6 +615,12 @@ if ($chosenService -eq "Hidive") {
 } else { # Crunchyroll
     $masterPath = "REPLACE_WITH_YOUR_CRUNCHY_PATH".Trim()
     $authScriptCurrent = "$masterPath\Auth_CR.bat"
+    
+    # --- Execute Authentication Script ---
+    Write-Host "Authenticating..." -ForegroundColor Green
+    & cmd /c "$authScriptCurrent"
+    # ------------------------------------
+    
     $aniDLPath = "$masterPath\aniDL.exe"
     $scriptOutputPath = "$masterPath\Generated_Scripts"
     $serviceOption = "crunchy"
