@@ -202,11 +202,10 @@ function Generate-ExperimentalCrunchyrollScript {
         # Ask for anime name
         $animeName = Read-Host "Enter Anime Name or type New to check the latest series (Experimental)"
         $serviceOption = "crunchy"
-        $extraParam = @('--crapi','web')
         if ($animeName -ieq "new") {
-            $searchResults = & $aniDLPath --service $serviceOption $extraParam --new
+            $searchResults = & $aniDLPath --service $serviceOption --new
         } else {
-            $searchResults = & $aniDLPath --service $serviceOption $extraParam --search "$animeName"
+            $searchResults = & $aniDLPath --service $serviceOption --search "$animeName"
         }
         if (-not $searchResults) {
             Write-Host "No results found. Try again."
@@ -398,8 +397,8 @@ function Generate-ExperimentalCrunchyrollScript {
 
             if ($episodeSelection -eq "all") {
                 $episodeOption = "--all"
-                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
                 $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
@@ -440,8 +439,8 @@ function Generate-ExperimentalCrunchyrollScript {
                         else { Write-Host "Invalid input. Please enter a valid range or comma-separated list." }
                     }
                     $episodeOption = "-e " + $episodeInput
-                    $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                    $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                    $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                    $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                     $pushdMaster = 'pushd "' + $masterPath + '"'
                     $callAuth = 'call "' + $authScriptCurrent + '"'
                     $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
@@ -512,8 +511,8 @@ function Generate-ExperimentalCrunchyrollScript {
                         $episodeOption = "-e " + $ep
                         $dynamicFileNameArg = '--fileName "Anime_Show - S' + $cmdSeason + 'E' + $currentEpTag + ' [${height}p]"'
                         
-                        $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                        $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                        $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                         $pushdMaster = 'pushd "' + $masterPath + '"'
                         $callAuth = 'call "' + $authScriptCurrent + '"'
                         $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
@@ -557,8 +556,8 @@ function Generate-ExperimentalCrunchyrollScript {
                 $skipForFilename = ($skipInput -replace "\s", "") -replace ",", "_"
                 $episodeOption = "--but -e " + $skipInput
                 
-                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
-                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --crapi web --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd1 = '"' + $aniDLPath + '" --service "crunchy" --cs ps5 --noaudio ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
+                $cmd2 = '"' + $aniDLPath + '" --service "crunchy" --cs android --novids --nosubs ' + $flag + ' ' + $seriesID + ' --chapters false ' + $episodeOption + ' --dubLang ' + $chosenDubLangCode + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" ' + $dynamicFileNameArg
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
                 $pushdVideos = 'pushd "' + $masterPath + '\' + $videosSubDir + '"'
@@ -611,7 +610,6 @@ if ($chosenService -eq "Hidive") {
     $aniDLPath = "$masterPath\aniDL.exe"
     $scriptOutputPath = "$masterPath\Generated_Scripts"
     $serviceOption = "hidive"
-    $extraParam = ""
 } else { # Crunchyroll
     $masterPath = "REPLACE_WITH_YOUR_CRUNCHY_PATH".Trim()
     $authScriptCurrent = "$masterPath\Auth_CR.bat"
@@ -633,8 +631,6 @@ if ($chosenService -eq "Hidive") {
         Generate-ExperimentalCrunchyrollScript -aniDLPath $aniDLPath -masterPath $masterPath -authScriptCurrent $authScriptCurrent -scriptOutputPath $scriptOutputPath
         exit # Exit after experimental script generation is complete
     }
-    # For classic mode, we set the extra param and let the main loop handle it.
-    $extraParam = @('--crapi','web')
 }
 
 $masterPath = $masterPath.Trim() -replace "(`r`n|`n|`r)", ""
@@ -647,10 +643,10 @@ while ($true) {
     $animeName = Read-Host
 
     if ($serviceOption -eq "crunchy" -and $animeName -ieq "new") {
-        $searchResults = & $aniDLPath --service $serviceOption $extraParam --new
+        $searchResults = & $aniDLPath --service $serviceOption --new
     }
     elseif ($serviceOption -eq "crunchy") {
-        $searchResults = & $aniDLPath --service $serviceOption $extraParam --search "$animeName"
+        $searchResults = & $aniDLPath --service $serviceOption --search "$animeName"
     }
     else {
         $searchResults = & $aniDLPath --service $serviceOption --search "$animeName"
@@ -828,7 +824,7 @@ while ($true) {
                     "if not defined SKIP_PAUSE pause"
                 )
             } else {
-                 $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $extraParam + ' ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                 $cmd = '"' + $aniDLPath + '" --service "' + $serviceOption + '" ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --tsd --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
                 $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
@@ -881,7 +877,7 @@ while ($true) {
                     $pushdMaster = 'pushd "' + $masterPath + '"'
                     $callAuth = 'call "' + $authScriptCurrent + '"'
                     $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
-                    $cmd = '"' + $aniDLPath + '" --service "crunchy" --crapi web ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                    $cmd = '"' + $aniDLPath + '" --service "crunchy" ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --tsd --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
                     $batchContent = @(
                         "@echo off",
                         "chcp 65001 >nul",
@@ -972,7 +968,7 @@ while ($true) {
                         $pushdMaster = 'pushd "' + $masterPath + '"'
                         $callAuth = 'call "' + $authScriptCurrent + '"'
                         $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
-                        $cmd = '"' + $aniDLPath + '" --service "crunchy" --crapi web ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E' + $currentEpTag + ' [${height}p]"'
+                        $cmd = '"' + $aniDLPath + '" --service "crunchy" ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --tsd --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E' + $currentEpTag + ' [${height}p]"'
                         $batchContent = @(
                             "@echo off",
                             "chcp 65001 >nul",
@@ -1021,7 +1017,7 @@ while ($true) {
             } else {
                 $pushdMaster = 'pushd "' + $masterPath + '"'
                 $callAuth = 'call "' + $authScriptCurrent + '"'
-                $cmd = '"' + $aniDLPath + '" --service "crunchy" --crapi web ' + $flag + ' ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --kstream 1 --waittime 10000 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                $cmd = '"' + $aniDLPath + '" --service "crunchy" ' + $flag + ' ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --tsd --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
                 $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
                 $batchContent = @(
                     "@echo off",
