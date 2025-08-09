@@ -63,7 +63,7 @@ function Handle-NoResults {
 
 function Get-NextAction {
     while ($true) {
-        $input = Read-Host "Do you want to search for another anime (Yes/No)? or change service(cs)"
+        $input = Read-Host "Do you want to search for another anime (Yes(y)/No(n))? or change service(cs)"
         switch ($input.Trim().ToLower()) {
             "yes"            { return "YES" }
             "y"              { return "YES" }
