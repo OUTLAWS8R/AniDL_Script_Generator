@@ -766,6 +766,21 @@ while($runScript) {
             
             $chosenVideoTitle = Get-VideoTitle
             
+            if ($serviceOption -eq "hidive") {
+                while ($true) {
+                    $inputFontSize = Read-Host "Enter fontSize (Leave blank for default 48)"
+                    if ([string]::IsNullOrWhiteSpace($inputFontSize)) {
+                        $chosenFontSize = 48
+                        break
+                    }
+                    if ($inputFontSize -match "^\d+$") {
+                        $chosenFontSize = [int]$inputFontSize
+                        break
+                    }
+                    Write-Host "Invalid input. Please enter a number or leave blank." -ForegroundColor Red
+                }
+            }
+            
             $episodeSelection = $null
             while (-not $episodeSelection) {
                 $input = Read-Host "Do you want to download all episodes or specific episodes? (all(a)/specific(s)/all-but-one(ab))"
@@ -818,16 +833,16 @@ while($runScript) {
             if ($episodeSelection -eq "all") {
                 $episodeOption = "--all"
                 if ($serviceOption -eq "hidive") {
-                    $cmd = $aniDLPath + ' --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                    $cmd = $aniDLPath + ' --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --originalFontSize false --fontSize ' + $chosenFontSize + ' --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
                     $pushdMaster = 'pushd "' + $masterPath + '"'
                     $callAuth = 'call "' + $authScriptCurrent + '"'
-                    $pushdVideos = 'pushd "' + $masterPath + '\videos"'
-                    $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
                     $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
                     $batchContent = @(
                         "@echo off", "chcp 65001 >nul", "SET ORIGINAL=%CD%",
-                        $pushdMaster, $callAuth, "popd", $cmd, $pushdVideos,
-                        $callRename, "popd", $moveVideos, "if not defined SKIP_PAUSE pause"
+                        $pushdMaster, $callAuth, "popd", 
+                        $cmd, 
+                        $moveVideos, 
+                        "if not defined SKIP_PAUSE pause"
                     )
                 } else {
                     $cmd = $aniDLPath + ' --service "' + $serviceOption + '" ' + $flag + ' ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --tsd --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
@@ -852,15 +867,15 @@ while($runScript) {
                     }
                     $episodeOption = "-e " + $episodeInput
                     if ($serviceOption -eq "hidive") {
-                        $cmd = $aniDLPath + ' --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
+                        $cmd = $aniDLPath + ' --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --originalFontSize false --fontSize ' + $chosenFontSize + ' --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E${episode} [${height}p]"'
                         $pushdMaster = 'pushd "' + $masterPath + '"'
                         $callAuth = 'call "' + $authScriptCurrent + '"'
-                        $pushdVideos = 'pushd "' + $masterPath + '\videos"'
-                        $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
                         $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
                         $batchContent = @(
                             "@echo off", "chcp 65001 >nul", "SET ORIGINAL=%CD%", $pushdMaster, $callAuth, "popd",
-                            $cmd, $pushdVideos, $callRename, "popd", $moveVideos, "if not defined SKIP_PAUSE pause"
+                            $cmd, 
+                            $moveVideos, 
+                            "if not defined SKIP_PAUSE pause"
                         )
                     }
                     else {
@@ -928,16 +943,16 @@ while($runScript) {
                         $batFileName = $batShowTitle + "_Season_" + $batSeason + "_E" + $currentEpTag + ".bat"
                         $episodeOption = "-e " + $ep
                         if ($serviceOption -eq "hidive") {
-                            $cmd = $aniDLPath + ' --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E' + $currentEpTag + ' [${height}p]"'
+                            $cmd = $aniDLPath + ' --service "' + $serviceOption + '" --srz ' + $seriesID + ' ' + $episodeOption + ' --dubLang ' + $chosenDubLang + ' --originalFontSize false --fontSize ' + $chosenFontSize + ' --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '" --fileName "' + $cmdShowTitle + ' - S' + $cmdSeason + 'E' + $currentEpTag + ' [${height}p]"'
                             $pushdMaster = 'pushd "' + $masterPath + '"'
                             $callAuth = 'call "' + $authScriptCurrent + '"'
-                            $pushdVideos = 'pushd "' + $masterPath + '\videos"'
-                            $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
                             $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
                             $batchContent = @(
                                 "@echo off", "chcp 65001 >nul", "SET ORIGINAL=%CD%",
-                                $pushdMaster, $callAuth, "popd", $cmd, $pushdVideos,
-                                $callRename, "popd", $moveVideos, "if not defined SKIP_PAUSE pause"
+                                $pushdMaster, $callAuth, "popd", 
+                                $cmd, 
+                                $moveVideos, 
+                                "if not defined SKIP_PAUSE pause"
                             )
                         } else {
                             $pushdMaster = 'pushd "' + $masterPath + '"'
@@ -963,16 +978,16 @@ while($runScript) {
                 }
                 $skipForFilename = ($skipInput -replace "\s", "") -replace ",", "_"
                 if ($serviceOption -eq "hidive") {
-                    $cmd = $aniDLPath + ' --service "' + $serviceOption + '" --srz ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --fontSize 45 --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '"'
+                    $cmd = $aniDLPath + ' --service "' + $serviceOption + '" --srz ' + $seriesID + ' --but -e ' + $skipInput + ' --dubLang ' + $chosenDubLang + ' --originalFontSize false --fontSize ' + $chosenFontSize + ' --dlsubs all --defaultAudio ' + $chosenDefaultAudio + ' --defaultSub ' + $chosenSub + ' -q 0 --partsize 30 --videoTitle "' + $chosenVideoTitle + '"'
                     $pushdMaster = 'pushd "' + $masterPath + '"'
                     $callAuth = 'call "' + $authScriptCurrent + '"'
-                    $pushdVideos = 'pushd "' + $masterPath + '\videos"'
-                    $callRename = 'call "' + $masterPath + '\videos\rename_mkv_tracks.bat"'
                     $moveVideos = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
                     $batchContent = @(
                         "chcp 65001 >nul", "@echo off", "SET ORIGINAL=%CD%",
-                        $pushdMaster, $callAuth, "popd", $cmd, $pushdVideos,
-                        $callRename, "popd", $moveVideos, "if not defined SKIP_PAUSE pause"
+                        $pushdMaster, $callAuth, "popd", 
+                        $cmd, 
+                        $moveVideos, 
+                        "if not defined SKIP_PAUSE pause"
                     )
                 } else {
                     $pushdMaster = 'pushd "' + $masterPath + '"'
