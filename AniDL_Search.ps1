@@ -146,14 +146,24 @@ function Get-ExperimentalFeatureConsent {
 
 function Parse-Series {
     param($searchResults)
+
     $foundSeries = @()
+    # State variables to store info from the last "master" [Z:] series.
+    $lastMasterTitle = ""
+    $lastMasterZID = ""
+
     # Allowed languages list.
     $allowedLangs = @("en-US", "en-IN", "es-419", "es-ES", "fr-FR", "pt-BR", "pt-PT", "ar-ME", "ar-SA", "it-IT", "de-DE", "ru-RU", "tr-TR", "hi-IN", "ca-ES", "pl-PL", "th-TH", "ta-IN", "ms-MY", "vi-VN", "id-ID", "te-IN", "zh-CN", "zh-HK", "zh-TW", "ko-KR", "ja-JP")
+
     foreach ($line in $searchResults -split "`r?`n") {
         $trimmedLine = $line.Trim()
-        if ($trimmedLine -match "^(Found movie lists:|Found episodes:|Newly added:)") { continue }
-        if ($trimmedLine -match "^(Top results:|Found series:|Total results:)") { continue }
-        # HIDIVE series pattern.
+
+        # Skip header or irrelevant lines
+        if ($trimmedLine -match "^(Found movie lists:|Found episodes:|Newly added:|Top results:|Found series:|Total results:|===|USER:|Your Country:)" -or [string]::IsNullOrWhiteSpace($trimmedLine)) {
+            continue
+        }
+
+        # HIDIVE series pattern (kept for compatibility).
         if ($serviceOption -eq "hidive" -and $trimmedLine -match "^\[Z\.([0-9]+)\]\s+(.+?)\s+\((\d+)\s+Seasons\)") {
             $seriesID = $matches[1].Trim()
             $title = $matches[2].Trim()
@@ -172,55 +182,56 @@ function Parse-Series {
             $foundSeries += $seriesObj
             continue
         }
-        # Crunchyroll pattern using Z: prefix.
-        if ($serviceOption -eq "crunchy" -and $trimmedLine -match "^\[Z:([^\|\]]+)(?:\|SRZ\.[^\]]+)?\]\s+(.+?)\s+\(Seasons:\s*(\d+)(?:,\s*EPs:\s*(\d+))?\)\s+\[(.*?)\]") {
-            $zMatches = [regex]::Matches($trimmedLine, "^\[Z:([^\|\]]+)(?:\|SRZ\.[^\]]+)?\]\s+(.+?)\s+\(Seasons:\s*(\d+)(?:,\s*EPs:\s*(\d+))?\)\s+\[(.*?)\]")
-            foreach ($m in $zMatches) {
-                $obj = [PSCustomObject]@{
-                    Title        = $m.Groups[2].Value.Trim()
-                    Season       = $m.Groups[3].Value.Trim()
-                    Type         = $m.Groups[5].Value.Trim()
-                    EpisodeCount = if ($m.Groups[4].Success) { $m.Groups[4].Value.Trim() } else { $null }
-                    SeriesID     = $null
-                    ZID          = $m.Groups[1].Value.Trim()
-                    Versions     = $null
-                    Subtitles    = $null
-                }
-                if (-not ($foundSeries | Where-Object { $_.Title -eq $obj.Title -and $_.Season -eq $obj.Season -and $_.ZID -eq $obj.ZID })) {
-                    $foundSeries += $obj
+
+        # --- Universal Regex for both S and Z lines ---
+        if ($line -match "^(\s*)\[(Z|S):([^\|\]]+)[^\]]*\]\s+(.+?)\s+\((.*?)\)\s+\[(.*?)\]") {
+            $indentation  = $matches[1]
+            $idPrefix     = $matches[2]
+            $idValue      = $matches[3].Trim()
+            $title        = $matches[4].Trim()
+            $metadata     = $matches[5].Trim()
+            $type         = $matches[6].Trim()
+
+            $seriesObj = [PSCustomObject]@{
+                Title        = $title
+                Season       = "1"
+                Type         = $type
+                EpisodeCount = $null
+                SeriesID     = $null
+                ZID          = $null
+                Versions     = $null
+                Subtitles    = $null
+            }
+
+            if ($metadata -match "Seasons?:\s*(\d+)") { $seriesObj.Season = $matches[1] }
+            if ($metadata -match "EPs:\s*(\d+)") { $seriesObj.EpisodeCount = $matches[1] }
+
+            if ($idPrefix -eq 'Z') {
+                $seriesObj.ZID = $idValue
+                $lastMasterTitle = $seriesObj.Title
+                $lastMasterZID   = $seriesObj.ZID
+            } else { # idPrefix is 'S'
+                $seriesObj.SeriesID = $idValue
+                $seriesObj.ZID = $lastMasterZID
+                if ($indentation.Length -gt 0 -and $seriesObj.Title -match "^\s*Season\s+\d+\s*$") {
+                    $seriesObj.Title = $lastMasterTitle
                 }
             }
+            
+            $foundSeries += $seriesObj
         }
-        # Crunchyroll pattern using S: prefix.
-        elseif ($trimmedLine -match "^\[S:([^\]]+)\]\s+(.+?)\s+\(Season:? (\d+)\)\s+\[(.*?)\]") {
-            $sMatches = [regex]::Matches($trimmedLine, "^\[S:([^\]]+)\]\s+(.+?)\s+\(Season:? (\d+)\)\s+\[(.*?)\]")
-            foreach ($m in $sMatches) {
-                $obj = [PSCustomObject]@{
-                    Title        = $m.Groups[2].Value.Trim()
-                    Season       = $m.Groups[3].Value.Trim()
-                    Type         = $m.Groups[4].Value.Trim()
-                    EpisodeCount = $null
-                    SeriesID     = $m.Groups[1].Value.Trim()
-                    ZID          = $null
-                    Versions     = $null
-                    Subtitles    = $null
-                }
-                if (-not ($foundSeries | Where-Object { $_.Title -eq $obj.Title -and $_.Season -eq $obj.Season -and $_.SeriesID -eq $obj.SeriesID })) {
-                    $foundSeries += $obj
-                }
-            }
-        }
-        # Process Versions with allowed language filtering.
-        elseif ($trimmedLine -match "^- Versions:\s*(.+)") {
-            $rawVersions = $matches[1].Trim()
-            $parsedVersions = $rawVersions -split "," | ForEach-Object { $_.Trim() } | Where-Object { $allowedLangs -contains $_ }
-            if ($foundSeries.Count -gt 0) { $foundSeries[-1].Versions = $parsedVersions }
-        }
-        # Process Subtitles with allowed language filtering.
-        elseif ($trimmedLine -match "^- Subtitles:\s*(.+)") {
-            $rawSubs = $matches[1].Trim()
-            $parsedSubs = $rawSubs -split "," | ForEach-Object { $_.Trim() } | Where-Object { $allowedLangs -contains $_ }
+        # Process Versions and Subtitles
+        elseif ($trimmedLine -match "^-\s+Versions:\s*(.+)") {
             if ($foundSeries.Count -gt 0) {
+                $rawVersions = $matches[1].Trim()
+                $parsedVersions = $rawVersions -split "," | ForEach-Object { $_.Trim() } | Where-Object { $allowedLangs -contains $_ }
+                $foundSeries[-1].Versions = $parsedVersions
+            }
+        }
+        elseif ($trimmedLine -match "^-\s+Subtitles:\s*(.+)") {
+            if ($foundSeries.Count -gt 0) {
+                $rawSubs = $matches[1].Trim()
+                $parsedSubs = $rawSubs -split "," | ForEach-Object { $_.Trim() } | Where-Object { $allowedLangs -contains $_ }
                 if (-not $foundSeries[-1].PSObject.Properties["Subtitles"]) {
                     $foundSeries[-1] | Add-Member -MemberType NoteProperty -Name Subtitles -Value $parsedSubs
                 }
@@ -271,7 +282,7 @@ function Generate-ExperimentalCrunchyrollScript {
             $displayLine = "[$i] $($foundSeries[$i].Title) - Season $($foundSeries[$i].Season) ($($foundSeries[$i].Type))"
             if ($foundSeries[$i].EpisodeCount) { $displayLine += " - EPs: $($foundSeries[$i].EpisodeCount)" }
             if ($foundSeries[$i].SeriesID) { $displayLine += " [S:$($foundSeries[$i].SeriesID)]" }
-            if ($foundSeries[$i].ZID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" }
+            if ($foundSeries[$i].ZID -and -not $foundSeries[$i].SeriesID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" } # Display ZID only if no SeriesID
             Write-Host $displayLine
             if ($foundSeries[$i].Versions) { Write-Host "    - Versions: $($foundSeries[$i].Versions -join ', ')" }
             if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
@@ -297,11 +308,16 @@ function Generate-ExperimentalCrunchyrollScript {
         if ($performNewSearch) { continue }
 
         foreach ($series in $selectedSeries) {
-            if ($serviceOption -eq "crunchy" -and -not [string]::IsNullOrWhiteSpace($series.ZID)) {
+            if ($serviceOption -eq "crunchy" -and -not [string]::IsNullOrWhiteSpace($series.SeriesID)) {
+                $flag = "-s"
+                $seriesID = $series.SeriesID
+            }
+            elseif ($serviceOption -eq "crunchy" -and -not [string]::IsNullOrWhiteSpace($series.ZID)) {
                 $flag = "--srz"
                 $seriesID = $series.ZID
-            } else {
-                $flag = "-s"
+            }
+            else {
+                $flag = "-s" # Fallback
                 $seriesID = $series.SeriesID
             }
             
@@ -675,7 +691,7 @@ while($runScript) {
             $displayLine = "[$i] $($foundSeries[$i].Title) - Season $($foundSeries[$i].Season) ($($foundSeries[$i].Type))"
             if ($foundSeries[$i].EpisodeCount) { $displayLine += " - EPs: $($foundSeries[$i].EpisodeCount)" }
             if ($foundSeries[$i].SeriesID) { $displayLine += " [S:$($foundSeries[$i].SeriesID)]" }
-            if ($foundSeries[$i].ZID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" }
+            if ($foundSeries[$i].ZID -and -not $foundSeries[$i].SeriesID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" } # Display ZID only if no SeriesID
             Write-Host $displayLine
             if ($foundSeries[$i].Versions) { Write-Host "    - Versions: $($foundSeries[$i].Versions -join ', ')" }
             if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
@@ -701,11 +717,16 @@ while($runScript) {
         if ($performNewSearch) { continue }
         
         foreach ($series in $selectedSeries) {
-            if ($serviceOption -eq "crunchy" -and -not [string]::IsNullOrWhiteSpace($series.ZID)) {
+            if ($serviceOption -eq "crunchy" -and -not [string]::IsNullOrWhiteSpace($series.SeriesID)) {
+                $flag = "-s"
+                $seriesID = $series.SeriesID
+            }
+            elseif ($serviceOption -eq "crunchy" -and -not [string]::IsNullOrWhiteSpace($series.ZID)) {
                 $flag = "--srz"
                 $seriesID = $series.ZID
-            } else {
-                $flag = "-s"
+            }
+            else {
+                $flag = "-s" # Fallback for Hidive
                 $seriesID = $series.SeriesID
             }
             
