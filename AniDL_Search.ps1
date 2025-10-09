@@ -133,12 +133,13 @@ function Get-VideoTitle {
 
 function Get-ExperimentalFeatureConsent {
     while ($true) {
-        $input = Read-Host 'Wanna use the experimental feature? Y/N'
-        switch ($input.ToLower()) {
-            'y' { return $true }
+        $input = Read-Host 'Wanna use the experimental feature?Y/N or Leave blank for Crunchyroll Classic'
+        switch ($input.ToLower().Trim()) {
+            'y'   { return $true }
             'yes' { return $true }
-            'n' { return $false }
-            'no' { return $false }
+            'n'   { return $false }
+            'no'  { return $false }
+            ''    { return $false }
             default { Write-Host "Please enter Y/N or Yes/No." }
         }
     }
@@ -239,7 +240,17 @@ function Parse-Series {
             }
         }
     }
-    return $foundSeries
+    $seenKeys = [System.Collections.Generic.HashSet[string]]::new()
+    $uniqueSeries = [System.Collections.Generic.List[psobject]]::new()
+
+    foreach ($series in $foundSeries) {
+        $uniqueKey = if (-not [string]::IsNullOrWhiteSpace($series.SeriesID)) { $series.SeriesID } else { $series.ZID }
+        if ($seenKeys.Add($uniqueKey)) {
+            $uniqueSeries.Add($series)
+        }
+    }
+
+    return $uniqueSeries
 }
 
 # --- Global Language map for easy extension ---
