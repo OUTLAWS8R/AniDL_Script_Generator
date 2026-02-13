@@ -250,7 +250,13 @@ function Parse-Series {
         }
     }
 
-    return $uniqueSeries
+    # Convert list to array and slice top 15
+    $finalArray = $uniqueSeries.ToArray()
+    if ($finalArray.Count -gt 15) {
+        $finalArray = $finalArray[0..14]
+    }
+    
+    return $finalArray
 }
 
 # --- Global Language map for easy extension ---
@@ -398,18 +404,22 @@ function Generate-ExperimentalCrunchyrollScript {
                 $scriptType = Get-SingleMultiple "Do you want a single script or multiple scripts? (Single(S)/Multiple(M))"
             }
             
+            # Clean title: Remove illegal chars AND replace dots with underscores
             $origShowTitle = ($series.Title -replace '[\\/:*?"<>|]', '') -replace '\s+', ' '
+            
             $inputShowTitle = Read-Host "Enter new show title for filename (leave blank for default [$origShowTitle])"
 
             if ($inputShowTitle -ne "") {
                 $cleaned = $inputShowTitle -replace '[\\/:*?"<>|]', ""
                 $cmdShowTitle = $cleaned.Trim()
                 $cmdShowTitle = $cmdShowTitle -replace "[\r\n]+", " "
-                $batShowTitle = $cleaned.Trim() -replace ' ', '_'
+                # Replace dots with underscores here
+                $batShowTitle = ($cleaned.Trim() -replace ' ', '_') -replace '\.', '_'
             } else {
                 $cmdShowTitle = $origShowTitle
                 $cmdShowTitle = $cmdShowTitle -replace "[\r\n]+", " "
-                $batShowTitle = $origShowTitle -replace '\s+', '_'
+                # Replace dots with underscores here too
+                $batShowTitle = ($origShowTitle -replace '\s+', '_') -replace '\.', '_'
             }
             
             if ($series.Season -match "^\d+$") {
@@ -645,7 +655,8 @@ while($runScript) {
         $scriptOutputPath = Join-Path -Path $masterPath -ChildPath "Generated_Scripts"
         $serviceOption = "crunchy"
         
-        if (!(Test-Path $scriptOutputPath)) { New-Item -ItemType Directory -Path $scriptOutputPath | Out-Null }
+        # --- Ensure output directory exists ---
+        if (!(Test-Path $scriptOutputPath)) { New-Item -ItemType Directory -Path $scriptOutputPath -Force | Out-Null }
         
         $useExperimental = Get-ExperimentalFeatureConsent
         
@@ -659,6 +670,9 @@ while($runScript) {
             }
         }
     }
+    
+    # --- Ensure output directory exists (for non-experimental mode) ---
+    if (!(Test-Path $scriptOutputPath)) { New-Item -ItemType Directory -Path $scriptOutputPath -Force | Out-Null }
 
     $pushdLine = 'pushd "' + $masterPath + '"'
     $moveLine  = 'move "' + $masterPath + '\videos\*.mkv" "%CD%"'
@@ -741,7 +755,10 @@ while($runScript) {
                 $seriesID = $series.SeriesID
             }
             
+            # --- Clean title and replace dots with underscores ---
             $origShowTitle = ($series.Title -replace '[\\/:*?"<>|]', '') -replace '\s+', ' '
+            $batShowTitle = ($origShowTitle -replace '\s+', '_') -replace '\.', '_'
+
             if ($series.Season -match "^\d+$") {
                 if ([int]$series.Season -lt 10) { $origSeason = "0" + [int]$series.Season }
                 else { $origSeason = $series.Season }
@@ -838,11 +855,12 @@ while($runScript) {
                 $cleaned = $inputShowTitle -replace '[\\/:*?"<>|]', ""
                 $cmdShowTitle = $cleaned.Trim()
                 $cmdShowTitle = $cmdShowTitle -replace "[\r\n]+", " "
-                $batShowTitle = $cleaned.Trim() -replace ' ', '_'
+                $batShowTitle = ($cleaned.Trim() -replace ' ', '_') -replace '\.', '_'
             } else {
                 $cmdShowTitle = $origShowTitle
                 $cmdShowTitle = $cmdShowTitle -replace "[\r\n]+", " "
-                $batShowTitle = $origShowTitle -replace '\s+', '_'
+                # Ensure original title also has dots replaced for the filename
+                $batShowTitle = ($origShowTitle -replace '\s+', '_') -replace '\.', '_'
             }
             
             $inputSeason = Read-Host "Enter new season value (leave blank for default [$origSeason])"
