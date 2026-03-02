@@ -250,12 +250,8 @@ function Parse-Series {
         }
     }
 
-    # Convert list to array and slice top 15
+    # Returning all items to allow for dynamic pagination later
     $finalArray = $uniqueSeries.ToArray()
-    if ($finalArray.Count -gt 15) {
-        $finalArray = $finalArray[0..14]
-    }
-    
     return $finalArray
 }
 
@@ -295,31 +291,50 @@ function Generate-ExperimentalCrunchyrollScript {
         Write-DebugInfo -rawResults $searchResults -seriesArray $foundSeries
 
         Write-Host "---- Available Series (Experimental) ----"
-        for ($i = 0; $i -lt $foundSeries.Count; $i++) {
-            $displayLine = "[$i] $($foundSeries[$i].Title) - Season $($foundSeries[$i].Season) ($($foundSeries[$i].Type))"
-            if ($foundSeries[$i].EpisodeCount) { $displayLine += " - EPs: $($foundSeries[$i].EpisodeCount)" }
-            if ($foundSeries[$i].SeriesID) { $displayLine += " [S:$($foundSeries[$i].SeriesID)]" }
-            if ($foundSeries[$i].ZID -and -not $foundSeries[$i].SeriesID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" } # Display ZID only if no SeriesID
-            Write-Host $displayLine
-            if ($foundSeries[$i].Versions) { Write-Host "    - Versions: $($foundSeries[$i].Versions -join ', ')" }
-            if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
-        }
         
+        $startIndex = 0
+        $displayLimit = 15
         $performNewSearch = $false
+
         while ($true) {
-            $seriesIndices = Read-Host "Enter the number(s) of the serie(s) or new search(n) (comma-separated)"
+            $endIndex = [math]::Min($displayLimit, $foundSeries.Count)
+            for ($i = $startIndex; $i -lt $endIndex; $i++) {
+                $displayLine = "[$i] $($foundSeries[$i].Title) - Season $($foundSeries[$i].Season) ($($foundSeries[$i].Type))"
+                if ($foundSeries[$i].EpisodeCount) { $displayLine += " - EPs: $($foundSeries[$i].EpisodeCount)" }
+                if ($foundSeries[$i].SeriesID) { $displayLine += " [S:$($foundSeries[$i].SeriesID)]" }
+                if ($foundSeries[$i].ZID -and -not $foundSeries[$i].SeriesID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" }
+                Write-Host $displayLine
+                if ($foundSeries[$i].Versions) { Write-Host "    - Versions: $($foundSeries[$i].Versions -join ', ')" }
+                if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
+            }
+
+            $seriesIndices = Read-Host "Enter the number(s) of the serie(s) or new search(n) (comma-separated),more search results(Enter):"
+            
+            # Pagination Trigger
+            if ([string]::IsNullOrWhiteSpace($seriesIndices)) {
+                if ($displayLimit -ge $foundSeries.Count) {
+                    Write-Host "No more results to display." -ForegroundColor Yellow
+                } else {
+                    $startIndex = $displayLimit
+                    $displayLimit += 15
+                }
+                continue
+            }
+
             if ($seriesIndices.Trim() -ieq 'n') {
                 $performNewSearch = $true
                 break
             }
+            
             $selectedSeries = $seriesIndices -split "," | ForEach-Object {
                 $index = $_.Trim()
                 if ($index -match "^\d+$" -and [int]$index -ge 0 -and [int]$index -lt $foundSeries.Count) {
                     $foundSeries[[int]$index]
                 }
             }
+            
             if ($selectedSeries) { break }
-            Write-Host "Invalid selection. Please enter valid numbers from the list, or 'n' for a new search."
+            Write-Host "Invalid selection. Please enter valid numbers from the list, 'n' for a new search, or press Enter for more results." -ForegroundColor Red
         }
 
         if ($performNewSearch) { continue }
@@ -712,23 +727,41 @@ while($runScript) {
         Write-DebugInfo -rawResults $searchResults -seriesArray $foundSeries
 
         Write-Host "---- Available Series ----"
-        for ($i = 0; $i -lt $foundSeries.Count; $i++) {
-            $displayLine = "[$i] $($foundSeries[$i].Title) - Season $($foundSeries[$i].Season) ($($foundSeries[$i].Type))"
-            if ($foundSeries[$i].EpisodeCount) { $displayLine += " - EPs: $($foundSeries[$i].EpisodeCount)" }
-            if ($foundSeries[$i].SeriesID) { $displayLine += " [S:$($foundSeries[$i].SeriesID)]" }
-            if ($foundSeries[$i].ZID -and -not $foundSeries[$i].SeriesID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" } # Display ZID only if no SeriesID
-            Write-Host $displayLine
-            if ($foundSeries[$i].Versions) { Write-Host "    - Versions: $($foundSeries[$i].Versions -join ', ')" }
-            if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
-        }
         
+        $startIndex = 0
+        $displayLimit = 15
         $performNewSearch = $false
+
         while ($true) {
-            $seriesIndices = Read-Host "Enter the number(s) of the serie(s) or new search(n) (comma-separated)"
+            $endIndex = [math]::Min($displayLimit, $foundSeries.Count)
+            for ($i = $startIndex; $i -lt $endIndex; $i++) {
+                $displayLine = "[$i] $($foundSeries[$i].Title) - Season $($foundSeries[$i].Season) ($($foundSeries[$i].Type))"
+                if ($foundSeries[$i].EpisodeCount) { $displayLine += " - EPs: $($foundSeries[$i].EpisodeCount)" }
+                if ($foundSeries[$i].SeriesID) { $displayLine += " [S:$($foundSeries[$i].SeriesID)]" }
+                if ($foundSeries[$i].ZID -and -not $foundSeries[$i].SeriesID) { $displayLine += " [Z:$($foundSeries[$i].ZID)]" }
+                Write-Host $displayLine
+                if ($foundSeries[$i].Versions) { Write-Host "    - Versions: $($foundSeries[$i].Versions -join ', ')" }
+                if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
+            }
+
+            $seriesIndices = Read-Host "Enter the number(s) of the serie(s) or new search(n) (comma-separated),more search results(Enter):"
+            
+            # Pagination Trigger
+            if ([string]::IsNullOrWhiteSpace($seriesIndices)) {
+                if ($displayLimit -ge $foundSeries.Count) {
+                    Write-Host "No more results to display." -ForegroundColor Yellow
+                } else {
+                    $startIndex = $displayLimit
+                    $displayLimit += 15
+                }
+                continue
+            }
+
             if ($seriesIndices.Trim() -ieq 'n') {
                 $performNewSearch = $true
                 break
             }
+            
             $selectedSeries = $seriesIndices -split "," | ForEach-Object {
                 $index = $_.Trim()
                 if ($index -match "^\d+$" -and [int]$index -ge 0 -and [int]$index -lt $foundSeries.Count) {
@@ -736,7 +769,7 @@ while($runScript) {
                 }
             }
             if ($selectedSeries) { break }
-            Write-Host "Invalid selection. Please enter valid numbers from the list, or 'n' for a new search."
+            Write-Host "Invalid selection. Please enter valid numbers from the list, 'n' for a new search, or press Enter for more results." -ForegroundColor Red
         }
 
         if ($performNewSearch) { continue }
