@@ -308,7 +308,7 @@ function Generate-ExperimentalCrunchyrollScript {
                 if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
             }
 
-            $seriesIndices = Read-Host "Enter the number(s) of the serie(s) or new search(n) (comma-separated),more search results(Enter):"
+            $seriesIndices = Read-Host "Enter the number(s) of the serie(s) or new search(n) (comma-separated), more search results(Enter)"
             
             # Pagination Trigger
             if ([string]::IsNullOrWhiteSpace($seriesIndices)) {
@@ -744,7 +744,7 @@ while($runScript) {
                 if ($foundSeries[$i].Subtitles) { Write-Host "    - Subtitles: $($foundSeries[$i].Subtitles -join ', ')" }
             }
 
-            $seriesIndices = Read-Host "Enter the number(s) of the serie(s) or new search(n) (comma-separated),more search results(Enter):"
+            $seriesIndices = Read-Host "Enter the number(s) of the serie(s) or new search(n) (comma-separated), more search results(Enter)"
             
             # Pagination Trigger
             if ([string]::IsNullOrWhiteSpace($seriesIndices)) {
