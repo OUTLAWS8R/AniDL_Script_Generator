@@ -1,5 +1,8 @@
 Write-Host "Welcome to DKB Search and Script Generator"
 
+# --- Global Allowed Languages ---
+$globalAllowedLangs = @("ja-JP", "en-US", "es-419", "es-ES", "fr-FR", "pt-BR", "pt-PT", "ar-ME", "ar-SA", "it-IT", "de-DE", "ru-RU", "tr-TR", "hi-IN", "ca-ES", "pl-PL", "th-TH", "ta-IN", "ms-MY", "vi-VN", "id-ID", "te-IN", "zh-CN", "zh-HK", "zh-TW", "ko-KR")
+
 # --- Path Auto-Discovery ---
 # Automatically find the master path where aniDL.exe and its files are located.
 try {
@@ -44,7 +47,7 @@ function Normalize-Number($num) {
 function Handle-NoResults {
     while ($true) {
         Write-Host "No Anime found. " -NoNewline -ForegroundColor Yellow
-        $input = Read-Host "Wanna do a new search(n), change service(s) or exit(Press Enter)? :"
+        $input = Read-Host "Wanna do a new search(n), change service(s) or exit(Press Enter)? "
         
         switch ($input.Trim().ToLower()) {
             'n'              { return "NEW_SEARCH" }
@@ -80,6 +83,7 @@ function Get-SelectionFromListWithDefault($prompt, [string[]]$list, $default) {
     for ($i = 0; $i -lt $list.Count; $i++) {
         Write-Host "[$i] $($list[$i])"
     }
+    # Removed trailing colon, Read-Host adds it automatically
     $finalPrompt = "$prompt (Leave blank for default $default)"
     while ($true) {
         $selection = Read-Host $finalPrompt
@@ -89,7 +93,41 @@ function Get-SelectionFromListWithDefault($prompt, [string[]]$list, $default) {
         if ($selection -match "^\d+$" -and [int]$selection -ge 0 -and [int]$selection -lt $list.Count) {
             return $list[[int]$selection]
         } else {
-            Write-Host "Invalid selection. Please enter a number between 0 and $($list.Count - 1), or leave blank for default."
+            Write-Host "Invalid selection. Please enter a number between 0 and $($list.Count - 1), or leave blank for default." -ForegroundColor Red
+        }
+    }
+}
+
+function Get-MultiSelectionFromListWithDefault($prompt, [string[]]$list, $defaultIndex, $defaultLabel) {
+    for ($i = 0; $i -lt $list.Count; $i++) {
+        Write-Host "[$i] $($list[$i])"
+    }
+    # Removed trailing colon, Read-Host adds it automatically
+    $finalPrompt = "$prompt [Default: $defaultLabel]"
+    while ($true) {
+        $selection = Read-Host $finalPrompt
+        if ([string]::IsNullOrWhiteSpace($selection)) {
+            # The comma ensures PowerShell returns an array even if it's 1 item
+            return ,@($list[$defaultIndex])
+        }
+        
+        $selectedItems = @()
+        $invalid = $false
+        $parts = $selection -split ',' | ForEach-Object { $_.Trim() }
+        
+        foreach ($part in $parts) {
+            if ($part -match "^\d+$" -and [int]$part -ge 0 -and [int]$part -lt $list.Count) {
+                $selectedItems += $list[[int]$part]
+            } else {
+                $invalid = $true
+                break
+            }
+        }
+        
+        if (-not $invalid -and $selectedItems.Count -gt 0) {
+            return ,$selectedItems
+        } else {
+            Write-Host "Invalid selection. Please enter comma-separated numbers between 0 and $($list.Count - 1)." -ForegroundColor Red
         }
     }
 }
@@ -152,9 +190,6 @@ function Parse-Series {
     # State variables to store info from the last "master" [Z:] series.
     $lastMasterTitle = ""
     $lastMasterZID = ""
-
-    # Allowed languages list.
-    $allowedLangs = @("en-US", "en-IN", "es-419", "es-ES", "fr-FR", "pt-BR", "pt-PT", "ar-ME", "ar-SA", "it-IT", "de-DE", "ru-RU", "tr-TR", "hi-IN", "ca-ES", "pl-PL", "th-TH", "ta-IN", "ms-MY", "vi-VN", "id-ID", "te-IN", "zh-CN", "zh-HK", "zh-TW", "ko-KR", "ja-JP")
 
     foreach ($line in $searchResults -split "`r?`n") {
         $trimmedLine = $line.Trim()
@@ -225,14 +260,14 @@ function Parse-Series {
         elseif ($trimmedLine -match "^-\s+Versions:\s*(.+)") {
             if ($foundSeries.Count -gt 0) {
                 $rawVersions = $matches[1].Trim()
-                $parsedVersions = $rawVersions -split "," | ForEach-Object { $_.Trim() } | Where-Object { $allowedLangs -contains $_ }
+                $parsedVersions = $rawVersions -split "," | ForEach-Object { $_.Trim() } | Where-Object { $globalAllowedLangs -contains $_ }
                 $foundSeries[-1].Versions = $parsedVersions
             }
         }
         elseif ($trimmedLine -match "^-\s+Subtitles:\s*(.+)") {
             if ($foundSeries.Count -gt 0) {
                 $rawSubs = $matches[1].Trim()
-                $parsedSubs = $rawSubs -split "," | ForEach-Object { $_.Trim() } | Where-Object { $allowedLangs -contains $_ }
+                $parsedSubs = $rawSubs -split "," | ForEach-Object { $_.Trim() } | Where-Object { $globalAllowedLangs -contains $_ }
                 if (-not $foundSeries[-1].PSObject.Properties["Subtitles"]) {
                     $foundSeries[-1] | Add-Member -MemberType NoteProperty -Name Subtitles -Value $parsedSubs
                 }
@@ -253,12 +288,6 @@ function Parse-Series {
     # Returning all items to allow for dynamic pagination later
     $finalArray = $uniqueSeries.ToArray()
     return $finalArray
-}
-
-# --- Global Language map for easy extension ---
-$languageDetails = [ordered]@{
-    "Japanese" = @{ Code = 'ja-JP'; TrackName = 'Japanese' }
-    "Chinese"  = @{ Code = 'zh-CN'; TrackName = 'Chinese (Mainland China)' }
 }
 
 # --- Experimental Crunchyroll Script Generator ---
@@ -334,7 +363,7 @@ function Generate-ExperimentalCrunchyrollScript {
             }
             
             if ($selectedSeries) { break }
-            Write-Host "Invalid selection. Please enter valid numbers from the list, 'n' for a new search, or press Enter for more results." -ForegroundColor Red
+            Write-Host "Invalid selection. Please enter valid numbers from the list, 'n' for a new search, or press Enter for more results" -ForegroundColor Red
         }
 
         if ($performNewSearch) { continue }
@@ -353,46 +382,20 @@ function Generate-ExperimentalCrunchyrollScript {
                 $seriesID = $series.SeriesID
             }
             
-            $chosenDubLangCode = "ja-JP"
-            $chosenDubLangName = "Japanese"
-            $chosenDubTrackName = "Japanese"
-
             Write-Host "--- Audio Language Selection ---" -ForegroundColor Yellow
             if ($series.Versions) {
                 $availableDubLangs = $series.Versions
-                $chosenDubLangCode = Get-SelectionFromListWithDefault "Choose a dub language to download:" $availableDubLangs "ja-JP"
-                foreach ($langName in $languageDetails.Keys) {
-                    if ($languageDetails[$langName].Code -eq $chosenDubLangCode) {
-                        $chosenDubLangName = $langName
-                        $chosenDubTrackName = $languageDetails[$langName].TrackName
-                        break
-                    }
-                }
+                [string[]]$chosenDubLangsArray = Get-MultiSelectionFromListWithDefault "Choose a dub language to download e.g. 0, 1" $availableDubLangs 0 "ja-JP"
+                $chosenDubLangCode = $chosenDubLangsArray -join " "
             } else {
-                Write-Host "Audio versions were not listed in search results. Please choose manually."
-                $allowedLangNames = $languageDetails.Keys
-                $defaultLangName = ($allowedLangNames | Select-Object -First 1)
-                $prompt = "Choose a dub language to download [Default: $defaultLangName]"
-
-                while ($true) {
-                    $userInput = Read-Host $prompt
-                    if ([string]::IsNullOrWhiteSpace($userInput)) {
-                        break
-                    }
-                    $matchedKey = $allowedLangNames | Where-Object { $_ -eq $userInput }
-                    if ($matchedKey) {
-                        $chosenDubLangCode = $languageDetails[$matchedKey].Code
-                        $chosenDubLangName = $matchedKey
-                        $chosenDubTrackName = $languageDetails[$matchedKey].TrackName
-                        break
-                    }
-                    Write-Host "Invalid selection. Please enter one of: $($allowedLangNames -join ', ')" -ForegroundColor Red
-                }
+                Write-Host "Audio versions were not listed in search results. Please choose manually, check Crunchyroll for available Audios."
+                [string[]]$chosenDubLangsArray = Get-MultiSelectionFromListWithDefault "Choose a dub language to download e.g. 0, 1" $globalAllowedLangs 0 "ja-JP"
+                $chosenDubLangCode = $chosenDubLangsArray -join " "
             }
             
             if ($series.Subtitles) {
                 $availableSubs = $series.Subtitles
-                $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script:" $availableSubs "en-US"
+                $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script" $availableSubs "en-US"
             } else { 
                 $chosenSub = "en-US" 
             }
@@ -484,20 +487,25 @@ function Generate-ExperimentalCrunchyrollScript {
                 ')'
             )
             
+            # Note: Experimental muxing batch logic is preserved and may require specific .m4s names
             $muxAndRenameLogic = @(
                 'for %%V in ("Anime_Show - S*.mkv") do (',
-                '    set "AUDIO="',
+                '    set "AUDIO_ARGS="',
+                '    set "AUDIO_FOUND="',
                 '    set "FULL=%%~nV"',
-                "    for %%A in (`"!FULL!*$($chosenDubTrackName).audio.m4s`") do set `"AUDIO=%%~nxA`"",
-                '    if defined AUDIO (',
-                "        mkvmerge -q -o `"!FULL!_muxed.mkv`" `"%%V`" --language 0:$($chosenDubLangCode) --track-name 0:`"$($chosenDubTrackName)`" `"!AUDIO!`"",
+                '    for %%A in ("!FULL!*.m4s") do (',
+                '        set "AUDIO_ARGS=!AUDIO_ARGS! "%%A""',
+                '        set "AUDIO_FOUND=1"',
+                '    )',
+                '    if defined AUDIO_FOUND (',
+                '        mkvmerge -q -o "!FULL!_muxed.mkv" "%%V" !AUDIO_ARGS!',
                 '        if exist "!FULL!_muxed.mkv" (',
                 '            del /Q "%%V"',
-                '            del /Q "!AUDIO!"',
+                '            for %%A in ("!FULL!*.m4s") do del /Q "%%A"',
                 '        )',
                 '    ) else (',
-                "        echo WARNING: no audio matching `"!FULL!*$($chosenDubTrackName).audio.m4s`" found for `"%%~nxV`"",
-                "        echo %%~nxV >> `"$($failedMuxLogFile)`"",
+                '        echo WARNING: no audio matching "*.m4s" found for "%%~nxV"',
+                '        echo %%~nxV >> "' + $failedMuxLogFile + '"',
                 '    )',
                 ')',
                 'for %%F in ("Anime_Show - S*_muxed.mkv") do (',
@@ -694,7 +702,7 @@ while($runScript) {
 
     $searchLoopActive = $true
     while ($searchLoopActive) {
-        Write-Host "Enter Anime Name or type New to check the latest series:" -NoNewline
+        Write-Host "Enter Anime Name or type New to check the latest series: " -NoNewline
         $animeName = Read-Host
 
         if ($serviceOption -eq "crunchy" -and $animeName -ieq "new") {
@@ -801,46 +809,41 @@ while($runScript) {
             $origEpisode = "1"
             
             if ($serviceOption -eq "hidive") {
+                Write-Host "--- Audio Language Selection ---" -ForegroundColor Yellow
                 $availableDubLangs = @("ja-JP", "en-US", "spa-419", "pt-BR")
-                $chosenDubLang = Get-SelectionFromListWithDefault "Choose a dub language to download:" $availableDubLangs "ja-JP"
-                $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" $availableDubLangs "ja-JP"
+                [string[]]$chosenDubLangsArray = Get-MultiSelectionFromListWithDefault "Choose a dub language to download e.g. 0, 1" $availableDubLangs 0 "ja-JP"
+                $chosenDubLang = $chosenDubLangsArray -join " "
+                
+                $defaultAudioLabel = $chosenDubLangsArray[0]
+                $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language" $chosenDubLangsArray $defaultAudioLabel
+                
                 $availableSubs = @("en-US", "ja-JP", "spa-419", "pt-BR")
-                $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script:" $availableSubs "en-US"
+                $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script" $availableSubs "en-US"
             }
             else { # --- Crunchyroll Classic Language Selection ---
                 if ($series.Versions) {
+                    Write-Host "--- Audio Language Selection ---" -ForegroundColor Yellow
                     $availableDubLangs = $series.Versions
-                    $chosenDubLang = Get-SelectionFromListWithDefault "Choose a dub language to download:" $availableDubLangs "ja-JP"
-                    $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" $availableDubLangs "ja-JP"
+                    [string[]]$chosenDubLangsArray = Get-MultiSelectionFromListWithDefault "Choose a dub language to download e.g. 0, 1" $availableDubLangs 0 $availableDubLangs[0]
+                    $chosenDubLang = $chosenDubLangsArray -join " "
+                    
+                    $defaultAudioLabel = $chosenDubLangsArray[0]
+                    $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language" $chosenDubLangsArray $defaultAudioLabel
                 }
                 else {
                     Write-Host "--- Audio Language Selection ---" -ForegroundColor Yellow
-                    Write-Host "Audio versions were not listed in search results. Please choose manually."
+                    Write-Host "Audio versions were not listed in search results. Please choose manually, check Crunchyroll for available Audios."
                     
-                    $allowedLangNames = $languageDetails.Keys
-                    $defaultLangName = ($allowedLangNames | Select-Object -First 1)
-                    $prompt = "Choose a dub language to download [Default: $defaultLangName]"
+                    [string[]]$chosenDubLangsArray = Get-MultiSelectionFromListWithDefault "Choose a dub language to download e.g. 0, 1" $globalAllowedLangs 0 "ja-JP"
+                    $chosenDubLang = $chosenDubLangsArray -join " "
                     
-                    $chosenDubLang = 'ja-JP'
-                    
-                    while ($true) {
-                        $userInput = Read-Host $prompt
-                        if ([string]::IsNullOrWhiteSpace($userInput)) {
-                            break
-                        }
-                        $matchedKey = $allowedLangNames | Where-Object { $_ -eq $userInput }
-                        if ($matchedKey) {
-                            $chosenDubLang = $languageDetails[$matchedKey].Code
-                            break
-                        }
-                        Write-Host "Invalid selection. Please enter one of: $($allowedLangNames -join ', ')" -ForegroundColor Red
-                    }
-                    $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language:" @($chosenDubLang) $chosenDubLang
+                    $defaultAudioLabel = $chosenDubLangsArray[0]
+                    $chosenDefaultAudio = Get-SelectionFromListWithDefault "Choose a default Audio language" $chosenDubLangsArray $defaultAudioLabel
                 }
 
                 if ($series.Subtitles) {
                     $availableSubs = $series.Subtitles
-                    $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script:" $availableSubs "en-US"
+                    $chosenSub = Get-SelectionFromListWithDefault "Choose the default subtitle for the script" $availableSubs "en-US"
                 } else { 
                     $chosenSub = "en-US" 
                 }
